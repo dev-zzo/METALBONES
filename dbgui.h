@@ -112,7 +112,7 @@ typedef struct _DBGUI_WAIT_STATE_CHANGE
 
 /* Debugging API typedefs */
 
-typedef NTSTATUS (NTAPI *PZWCREATEDEBUGOBJECT)(
+typedef NTSTATUS (NTAPI *PNTCREATEDEBUGOBJECT)(
     PHANDLE DebugHandle,
     ACCESS_MASK DesiredAccess,
     POBJECT_ATTRIBUTES ObjectAttributes,

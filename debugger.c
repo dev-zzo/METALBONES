@@ -15,7 +15,7 @@ _PyBones_Process_DelThread(
     PyObject *self,
     PyObject *thread_id);
 
-static PZWCREATEDEBUGOBJECT ZwCreateDebugObject;
+static PNTCREATEDEBUGOBJECT NtCreateDebugObject;
 static PNTDEBUGACTIVEPROCESS NtDebugActiveProcess;
 static PNTWAITFORDEBUGEVENT NtWaitForDebugEvent;
 static PNTDEBUGCONTINUE NtDebugContinue;
@@ -31,11 +31,31 @@ init_ntdll_pointers(void)
         return -1;
     }
 
-    ZwCreateDebugObject = (PZWCREATEDEBUGOBJECT)GetProcAddress(ntdll, "ZwCreateDebugObject");
+    NtCreateDebugObject = (PNTCREATEDEBUGOBJECT)GetProcAddress(ntdll, "NtCreateDebugObject");
+    if (!NtCreateDebugObject) {
+        DEBUG_PRINT("BONES: Failed to get NtCreateDebugObject!\n");
+        return -1;
+    }
     NtDebugActiveProcess = (PNTDEBUGACTIVEPROCESS)GetProcAddress(ntdll, "NtDebugActiveProcess");
+    if (!NtDebugActiveProcess) {
+        DEBUG_PRINT("BONES: Failed to get NtDebugActiveProcess!\n");
+        return -1;
+    }
     NtWaitForDebugEvent = (PNTWAITFORDEBUGEVENT)GetProcAddress(ntdll, "NtWaitForDebugEvent");
+    if (!NtWaitForDebugEvent) {
+        DEBUG_PRINT("BONES: Failed to get NtWaitForDebugEvent!\n");
+        return -1;
+    }
     NtDebugContinue = (PNTDEBUGCONTINUE)GetProcAddress(ntdll, "NtDebugContinue");
+    if (!NtDebugContinue) {
+        DEBUG_PRINT("BONES: Failed to get NtDebugContinue!\n");
+        return -1;
+    }
     NtRemoveProcessDebug = (PNTREMOVEPROCESSDEBUG)GetProcAddress(ntdll, "NtRemoveProcessDebug");
+    if (!NtRemoveProcessDebug) {
+        DEBUG_PRINT("BONES: Failed to get NtRemoveProcessDebug!\n");
+        return -1;
+    }
 
     return 0;
 }
@@ -92,9 +112,14 @@ init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
     NTSTATUS status;
     OBJECT_ATTRIBUTES dummy;
 
+    if (!NtCreateDebugObject && init_ntdll_pointers() < 0) {
+        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+        return -1;
+    }
+
     /* Create a debug object */
     InitializeObjectAttributes(&dummy, NULL, 0, NULL, 0);
-    status = ZwCreateDebugObject(
+    status = NtCreateDebugObject(
         &self->dbgui_object,
         DEBUG_OBJECT_ALL_ACCESS,
         &dummy,
