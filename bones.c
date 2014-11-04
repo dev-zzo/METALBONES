@@ -1,12 +1,9 @@
 #include <Python.h>
 
-#include "internals.h"
-
-/* Externals from other files */
-int init_DebuggerType(PyObject* m);
+#include "bones.h"
 
 /* NT status exception */
-PyObject *NtStatusError;
+PyObject *PyBones_NtStatusError;
 
 /* Module method definitions */
 static PyMethodDef bones_methods[] = {
@@ -21,15 +18,35 @@ PyMODINIT_FUNC
 initbones(void) 
 {
     PyObject* m;
+    int rv;
 
     m = Py_InitModule3(
         "bones",
         bones_methods,
-        "A simple Win32/Win64 debugger module.");
+        "A simple Win32 debugger module.");
 
-    NtStatusError = PyErr_NewException("bones.NtStatusError", NULL, NULL);
-    Py_INCREF(NtStatusError);
-    PyModule_AddObject(m, "NtStatusError", NtStatusError);
+    PyBones_NtStatusError = PyErr_NewException("bones.NtStatusError", NULL, NULL);
+    Py_INCREF(PyBones_NtStatusError);
+    PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 
-    init_DebuggerType(m);
+    rv = PyType_Ready(&PyBones_Debugger_Type);
+    if (rv < 0)
+    {
+    }
+    Py_INCREF(&PyBones_Debugger_Type);
+    PyModule_AddObject(m, "Debugger", (PyObject *)&PyBones_Debugger_Type);
+
+    rv = PyType_Ready(&PyBones_Thread_Type);
+    if (rv < 0)
+    {
+    }
+    Py_INCREF(&PyBones_Thread_Type);
+    PyModule_AddObject(m, "Thread", (PyObject *)&PyBones_Thread_Type);
+
+    rv = PyType_Ready(&PyBones_Process_Type);
+    if (rv < 0)
+    {
+    }
+    Py_INCREF(&PyBones_Process_Type);
+    PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);
 }

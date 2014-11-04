@@ -96,7 +96,8 @@
   <ItemGroup>
     <ClInclude Include="dbgui.h" />
     <ClInclude Include="debugevent.h" />
-    <ClInclude Include="internals.h" />
+    <ClInclude Include="bones.h" />
+    <ClInclude Include="internal.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

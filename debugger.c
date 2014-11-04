@@ -1,8 +1,8 @@
 #include <Python.h>
 #include <Windows.h>
 
+#include "bones.h"
 #include "dbgui.h"
-#include "internals.h"
 
 static PZWCREATEDEBUGOBJECT ZwCreateDebugObject;
 static PNTDEBUGACTIVEPROCESS NtDebugActiveProcess;
@@ -10,19 +10,41 @@ static PNTWAITFORDEBUGEVENT NtWaitForDebugEvent;
 static PNTDEBUGCONTINUE NtDebugContinue;
 static PNTREMOVEPROCESSDEBUG NtRemoveProcessDebug;
 
+static int
+init_ntdll_pointers(void)
+{
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll)
+    {
+        /* Print something? */
+        return -1;
+    }
+
+    ZwCreateDebugObject = (PZWCREATEDEBUGOBJECT)GetProcAddress(ntdll, "ZwCreateDebugObject");
+    NtDebugActiveProcess = (PNTDEBUGACTIVEPROCESS)GetProcAddress(ntdll, "NtDebugActiveProcess");
+    NtWaitForDebugEvent = (PNTWAITFORDEBUGEVENT)GetProcAddress(ntdll, "NtWaitForDebugEvent");
+    NtDebugContinue = (PNTDEBUGCONTINUE)GetProcAddress(ntdll, "NtDebugContinue");
+    NtRemoveProcessDebug = (PNTREMOVEPROCESSDEBUG)GetProcAddress(ntdll, "NtRemoveProcessDebug");
+
+    return 0;
+}
+
+
 /* Debugger object */
+
 typedef struct {
     PyObject_HEAD
 
-    /* Type-specific fields go here. */
-    HANDLE dbgui_object;
+    HANDLE dbgui_object; /* NT debugger object handle */
 
-} Debugger;
+    PyObject *processes; /* A dict mapping process id -> process object */
 
-/* Debugger object methods */
+} PyBones_DebuggerObject;
+
+/* Debugger type methods */
 
 static void
-Debugger_dealloc(Debugger* self)
+dealloc(PyBones_DebuggerObject* self)
 {
     if (self->dbgui_object)
     {
@@ -34,21 +56,27 @@ Debugger_dealloc(Debugger* self)
 }
 
 static PyObject *
-Debugger_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
-    Debugger *self;
+    PyBones_DebuggerObject *self;
 
-    self = (Debugger *)type->tp_alloc(type, 0);
+    self = (PyBones_DebuggerObject *)type->tp_alloc(type, 0);
     if (self != NULL)
     {
         self->dbgui_object = NULL;
+        self->processes = PyDict_New();
+        if (!self->processes)
+        {
+            Py_DECREF(self);
+            return NULL;
+        }
     }
 
     return (PyObject *)self;
 }
 
 static int
-Debugger_init(Debugger *self, PyObject *args, PyObject *kwds)
+init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES dummy;
@@ -58,7 +86,7 @@ Debugger_init(Debugger *self, PyObject *args, PyObject *kwds)
     status = ZwCreateDebugObject(&self->dbgui_object, DEBUG_OBJECT_ALL_ACCESS, &dummy, 1UL);
     if (!NT_SUCCESS(status))
     {
-        PyErr_SetObject(NtStatusError, PyLong_FromUnsignedLong(status));
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return -1;
     }
 
@@ -66,7 +94,7 @@ Debugger_init(Debugger *self, PyObject *args, PyObject *kwds)
 }
 
 static int
-Debugger_attach(Debugger *self, PyObject *args)
+attach(PyBones_DebuggerObject *self, PyObject *args)
 {
     HANDLE process;
     NTSTATUS status;
@@ -79,7 +107,7 @@ Debugger_attach(Debugger *self, PyObject *args)
     status = NtDebugActiveProcess(process, self->dbgui_object);
     if (!NT_SUCCESS(status))
     {
-        PyErr_SetObject(NtStatusError, PyLong_FromUnsignedLong(status));
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return -1;
     }
 
@@ -87,7 +115,7 @@ Debugger_attach(Debugger *self, PyObject *args)
 }
 
 static int
-Debugger_detach(Debugger *self, PyObject *args)
+detach(PyBones_DebuggerObject *self, PyObject *args)
 {
     HANDLE process;
     NTSTATUS status;
@@ -100,7 +128,7 @@ Debugger_detach(Debugger *self, PyObject *args)
     status = NtRemoveProcessDebug(process, self->dbgui_object);
     if (!NT_SUCCESS(status))
     {
-        PyErr_SetObject(NtStatusError, PyLong_FromUnsignedLong(status));
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return -1;
     }
 
@@ -108,7 +136,7 @@ Debugger_detach(Debugger *self, PyObject *args)
 }
 
 static PyObject *
-Debugger_wait(Debugger *self, PyObject *args)
+wait(PyBones_DebuggerObject *self, PyObject *args)
 {
     DBGUI_WAIT_STATE_CHANGE info;
     LARGE_INTEGER timeout;
@@ -122,7 +150,7 @@ Debugger_wait(Debugger *self, PyObject *args)
     status = NtWaitForDebugEvent(self->dbgui_object, TRUE, &timeout, &info);
     if (!NT_SUCCESS(status))
     {
-        PyErr_SetObject(NtStatusError, PyLong_FromUnsignedLong(status));
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return NULL;
     }
 
@@ -134,33 +162,136 @@ Debugger_wait(Debugger *self, PyObject *args)
         break;
 
     case DbgCreateThreadStateChange:
+        break;
+
     case DbgCreateProcessStateChange:
+        {
+            PyObject *arglist;
+            PyObject *process;
+            PyObject *process_id;
+
+            process_id = PyInt_FromLong(info.AppClientId.UniqueProcess);
+            arglist = PyTuple_Pack(2,
+                process_id,
+                PyLong_FromUnsignedLong((UINT_PTR)info.StateInfo.CreateProcessInfo.NewProcess.BaseOfImage));
+            process = PyObject_CallObject(&PyBones_Process_Type, arglist);
+            Py_DECREF(arglist);
+            if (!process)
+            {
+                /* TBD */
+                break;
+            }
+
+            if (PyDict_SetItem(self->processes, process_id, process) < 0)
+            {
+                /* TBD */
+                break;
+            }
+        }
+        break;
+
     case DbgExitThreadStateChange:
+        break;
+
     case DbgExitProcessStateChange:
+        {
+            PyObject *process_id;
+            PyObject *process;
+
+            process_id = PyInt_FromLong(info.AppClientId.UniqueProcess);
+            process = PyDict_GetItem(self->processes, process_id);
+            if (process)
+            {
+                PyObject *method_name;
+                PyObject *result;
+
+                /* Call the handler method */
+                method_name = PyString_FromString("on_process_exit");
+                result = PyObject_CallMethodObjArgs(self, method_name, process, NULL);
+                if (result)
+                {
+                    /* OK */
+                    Py_DECREF(result);
+                }
+                else
+                {
+                    PyObject *exc;
+                    /* Failed -- no method? */
+                    exc = PyErr_Occurred();
+                    if (PyErr_GivenExceptionMatches(exc, &PyExc_AttributeError))
+                    {
+                        PyErr_Clear();
+                    }
+                    else
+                    {
+                        /* Pass the exception to the interpreter */
+                    }
+                }
+                Py_DECREF(method_name);
+
+                /* Remove the process */
+                if (PyDict_DelItem(self->processes, process_id) < 0)
+                {
+                    /* TBD */
+                }
+            }
+            else
+            {
+                /* No such process? */
+            }
+        }
+        break;
+
     case DbgExceptionStateChange:
+        break;
+
     case DbgBreakpointStateChange:
+        break;
+
     case DbgSingleStepStateChange:
+        break;
+
     case DbgLoadDllStateChange:
+        break;
+
     case DbgUnloadDllStateChange:
         break;
     }
 }
 
 /* Debugger object method definitions */
-static PyMethodDef Debugger_methods[] = {
-    { "attach", (PyCFunction)Debugger_attach, METH_VARARGS, "Attach to a specified process" },
-    { "detach", (PyCFunction)Debugger_detach, METH_VARARGS, "Detach from a specified process" },
+static PyMethodDef methods[] = {
+    { "attach", (PyCFunction)attach, METH_VARARGS, "Attach to a specified process" },
+    { "detach", (PyCFunction)detach, METH_VARARGS, "Detach from a specified process" },
+    {NULL}  /* Sentinel */
+};
+
+/* Debugger object field accessors */
+
+static PyObject *
+get_processes(PyBones_DebuggerObject *self, void *closure)
+{
+    PyObject *p = self->processes;
+    Py_INCREF(p);
+    return p;
+}
+
+static PyGetSetDef getseters[] =
+{
+    /* name, get, set, doc, closure */
+    { "processes", (getter)get_processes, NULL, "Processes being debugged", NULL },
     {NULL}  /* Sentinel */
 };
 
 /* Debugger object type */
-static PyTypeObject DebuggerType = {
+PyTypeObject PyBones_Debugger_Type =
+{
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
     "bones.Debugger",  /*tp_name*/
-    sizeof(Debugger),  /*tp_basicsize*/
+    sizeof(PyBones_DebuggerObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
-    (destructor)Debugger_dealloc,  /*tp_dealloc*/
+    (destructor)dealloc,  /*tp_dealloc*/
     0,  /*tp_print*/
     0,  /*tp_getattr*/
     0,  /*tp_setattr*/
@@ -183,60 +314,16 @@ static PyTypeObject DebuggerType = {
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
     0,  /* tp_iternext */
-    Debugger_methods,  /* tp_methods */
+    methods,  /* tp_methods */
     0,  /* tp_members */
-    0,  /* tp_getset */
+    getseters,  /* tp_getset */
     0,  /* tp_base */
     0,  /* tp_dict */
     0,  /* tp_descr_get */
     0,  /* tp_descr_set */
     0,  /* tp_dictoffset */
-    (initproc)Debugger_init,  /* tp_init */
+    (initproc)init,  /* tp_init */
     0,  /* tp_alloc */
-    Debugger_new,  /* tp_new */
+    new,  /* tp_new */
 };
 
-/* Grab the function pointers */
-static int
-init_ntdll_pointers(void)
-{
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll)
-    {
-        /* Print something? */
-        return -1;
-    }
-
-    ZwCreateDebugObject = (PZWCREATEDEBUGOBJECT)GetProcAddress(ntdll, "ZwCreateDebugObject");
-    NtDebugActiveProcess = (PNTDEBUGACTIVEPROCESS)GetProcAddress(ntdll, "NtDebugActiveProcess");
-    NtWaitForDebugEvent = (PNTWAITFORDEBUGEVENT)GetProcAddress(ntdll, "NtWaitForDebugEvent");
-    NtDebugContinue = (PNTDEBUGCONTINUE)GetProcAddress(ntdll, "NtDebugContinue");
-    NtRemoveProcessDebug = (PNTREMOVEPROCESSDEBUG)GetProcAddress(ntdll, "NtRemoveProcessDebug");
-
-    return 0;
-}
-
-/* Init function to hook up this type into the module. */
-int
-init_DebuggerType(PyObject* m)
-{
-    int rv = 0;
-
-    rv = init_ntdll_pointers();
-    if (rv < 0)
-    {
-        return rv;
-    }
-
-    DebuggerType.tp_new = PyType_GenericNew;
-    rv = PyType_Ready(&DebuggerType);
-    if (rv < 0)
-    {
-        return rv;
-    }
-
-    Py_INCREF(&DebuggerType);
-    PyModule_AddObject(m, "Debugger", (PyObject *)&DebuggerType);
-
-    return rv;
-}

@@ -6,10 +6,8 @@
 /* ------------------------------------------------------------------------- */
 
 static int
-Debugger_init(Debugger *self, PyObject *args, PyObject *kwds)
+DebugEvent_init(DebugEvent *self, PyObject *args, PyObject *kwds)
 {
-    self->process_id = 0;
-    self->thread_id = 0;
     return 0;
 }
 
