@@ -111,8 +111,7 @@ get_threads(PyBones_ProcessObject *self, void *closure)
     return PyDictProxy_New(self->threads);
 }
 
-static PyGetSetDef getseters[] =
-{
+static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique process ID", NULL },
     { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
@@ -122,8 +121,7 @@ static PyGetSetDef getseters[] =
 
 /* Process object type */
 
-PyTypeObject PyBones_Process_Type =
-{
+PyTypeObject PyBones_Process_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
     "bones.Process",  /*tp_name*/

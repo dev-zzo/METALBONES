@@ -2,6 +2,7 @@
 #define __BONES_INCLUDED
 
 extern PyObject *PyBones_NtStatusError;
+extern PyObject *PyBones_Win32Error;
 
 extern PyTypeObject PyBones_Debugger_Type;
 extern PyTypeObject PyBones_Thread_Type;

@@ -108,8 +108,7 @@ get_teb_address(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong((UINT_PTR)self->teb_address);
 }
 
-static PyGetSetDef getseters[] =
-{
+static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique thread ID", NULL },
     { "process", (getter)get_process, NULL, "Owning process", NULL },
@@ -120,8 +119,7 @@ static PyGetSetDef getseters[] =
 
 /* Thread object type */
 
-PyTypeObject PyBones_Thread_Type =
-{
+PyTypeObject PyBones_Thread_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
     "bones.Thread",  /*tp_name*/

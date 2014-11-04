@@ -107,6 +107,59 @@ init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
     return 0;
 }
 
+PyDoc_STRVAR(spawn__doc__,
+"spawn(self, cmdline)\n\n\
+Spawns and attaches the Debugger object to the process.");
+
+static PyObject *
+spawn(PyBones_DebuggerObject *self, PyObject *args)
+{
+    PyObject *result = NULL;
+    char *cmdline = NULL;
+    BOOL cp_result;
+    NTSTATUS status;
+    STARTUPINFOA startup_info = { sizeof(STARTUPINFOA), 0, };
+    PROCESS_INFORMATION process_info = { 0, };
+
+    if (!PyArg_ParseTuple(args, "s", &cmdline)) {
+        goto exit0;
+    }
+
+    cp_result = CreateProcessA(
+        NULL, /* lpApplicationName */
+        cmdline, /* lpCommandLine */
+        NULL, /* lpProcessAttributes */
+        NULL, /* lpThreadAttributes */
+        FALSE, /* bInheritHandles */
+        CREATE_SUSPENDED, /* dwCreationFlags */
+        NULL, /* lpEnvironment */
+        NULL, /* lpCurrentDirectory */
+        &startup_info, /* */
+        &process_info);
+    if (!cp_result) {
+        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+        goto exit0;
+    }
+
+    status = NtDebugActiveProcess(process_info.hProcess, self->dbgui_object);
+    ResumeThread(process_info.hThread);
+    if (!NT_SUCCESS(status)) {
+        TerminateProcess(process_info.hProcess, -1);
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        goto exit1;
+    }
+
+    Py_INCREF(Py_None);
+    result = Py_None;
+
+exit1:
+    /* We don't need these -- we'll get ones with debug events */
+    CloseHandle(process_info.hThread);
+    CloseHandle(process_info.hProcess);
+exit0:
+    return result;
+}
+
 PyDoc_STRVAR(attach__doc__,
 "attach(self, process_handle)\n\n\
 Attaches the Debugger object to a process.");
@@ -402,12 +455,14 @@ wait(PyBones_DebuggerObject *self, PyObject *args)
     if (handle_state_change(self, &info) < 0) {
         return NULL;
     }
+
     Py_INCREF(Py_True);
     return Py_True;
 }
 
 /* Debugger object method definitions */
 static PyMethodDef methods[] = {
+    { "spawn", (PyCFunction)spawn, METH_VARARGS, spawn__doc__ },
     { "attach", (PyCFunction)attach, METH_VARARGS, attach__doc__ },
     { "detach", (PyCFunction)detach, METH_VARARGS, detach__doc__ },
     { "wait", (PyCFunction)wait, METH_VARARGS, wait__doc__ },
@@ -422,16 +477,14 @@ get_processes(PyBones_DebuggerObject *self, void *closure)
     return PyDictProxy_New(self->processes);
 }
 
-static PyGetSetDef getseters[] =
-{
+static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "processes", (getter)get_processes, NULL, "Processes being debugged", NULL },
     {NULL}  /* Sentinel */
 };
 
 /* Debugger object type */
-PyTypeObject PyBones_Debugger_Type =
-{
+PyTypeObject PyBones_Debugger_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
     "bones.Debugger",  /*tp_name*/

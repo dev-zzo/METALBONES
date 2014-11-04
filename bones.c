@@ -2,11 +2,14 @@
 
 #include "internal.h"
 
+/* Win32 system error code exception */
+PyObject *PyBones_Win32Error;
+
 /* NT status exception */
 PyObject *PyBones_NtStatusError;
 
 /* Module method definitions */
-static PyMethodDef bones_methods[] = {
+static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
 };
 
@@ -22,8 +25,12 @@ initbones(void)
 
     m = Py_InitModule3(
         "bones",
-        bones_methods,
+        methods,
         "A simple Win32 debugger module.");
+
+    PyBones_Win32Error = PyErr_NewException("bones.Win32Error", NULL, NULL);
+    Py_INCREF(PyBones_Win32Error);
+    PyModule_AddObject(m, "Win32Error", PyBones_Win32Error);
 
     PyBones_NtStatusError = PyErr_NewException("bones.NtStatusError", NULL, NULL);
     Py_INCREF(PyBones_NtStatusError);
