@@ -508,6 +508,11 @@ static PyGetSetDef getseters[] = {
     {NULL}  /* Sentinel */
 };
 
+PyDoc_STRVAR(type_doc,
+"The debugger object.\n\
+The main object one would make use of to debug stuff.\n\
+NOTE: To access the event methods, subclass this.");
+
 /* Debugger object type */
 PyTypeObject PyBones_Debugger_Type = {
     PyObject_HEAD_INIT(NULL)
@@ -531,7 +536,7 @@ PyTypeObject PyBones_Debugger_Type = {
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
-    "Debugger object",  /*tp_doc*/
+    type_doc,  /*tp_doc*/
     0,  /* tp_traverse */
     0,  /* tp_clear */
     0,  /* tp_richcompare */
