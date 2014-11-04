@@ -234,6 +234,19 @@ detach(PyBones_DebuggerObject *self, PyObject *args)
 }
 
 static int
+ack_event(HANDLE dbgui_object, PCLIENT_ID client)
+{
+    NTSTATUS status;
+
+    status = NtDebugContinue(dbgui_object, client, DBG_CONTINUE);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        return -1;
+    }
+    return 0;
+}
+
+static int
 handle_cb_result(PyObject *cb_result)
 {
     PyObject *exc;
@@ -310,11 +323,13 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     case DbgIdle:
         /* No idea how to handle these. */
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgIdle.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgReplyPending:
         /* No idea how to handle these. */
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgReplyPending.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgCreateProcessStateChange: {
@@ -345,6 +360,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
                     Py_DECREF(process);
                 }
             }
+            ack_event(self->dbgui_object, &info->AppClientId);
         }
         break;
 
@@ -367,6 +383,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
                 /* No such process? */
                 DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
             }
+            ack_event(self->dbgui_object, &info->AppClientId);
         }
         break;
 
@@ -386,6 +403,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
                 /* No such process? */
                 DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
             }
+            ack_event(self->dbgui_object, &info->AppClientId);
         }
         break;
 
@@ -413,22 +431,34 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
                 /* No such process? */
                 DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
             }
+
+            ack_event(self->dbgui_object, &info->AppClientId);
         }
         break;
 
     case DbgExceptionStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgExceptionStateChange.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgBreakpointStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgSingleStepStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgLoadDllStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgLoadDllStateChange.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
 
     case DbgUnloadDllStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgUnloadDllStateChange.\n", pid, tid);
+        ack_event(self->dbgui_object, &info->AppClientId);
         break;
     }
 
@@ -440,13 +470,13 @@ exit0:
     return result;
 }
 
-PyDoc_STRVAR(wait__doc__,
-"wait(self, timeout = None) -> bool\n\n\
+PyDoc_STRVAR(wait_event__doc__,
+"wait_event(self, timeout = None) -> bool\n\n\
 Wait for a debugging event for a specified timeout in ms.\n\
 If no event occurs, returns False, else True.");
 
 static PyObject *
-wait(PyBones_DebuggerObject *self, PyObject *args)
+wait_event(PyBones_DebuggerObject *self, PyObject *args)
 {
     DBGUI_WAIT_STATE_CHANGE info;
     unsigned int wait_time = UINT_MAX;
@@ -490,7 +520,7 @@ static PyMethodDef methods[] = {
     { "spawn", (PyCFunction)spawn, METH_VARARGS, spawn__doc__ },
     { "attach", (PyCFunction)attach, METH_VARARGS, attach__doc__ },
     { "detach", (PyCFunction)detach, METH_VARARGS, detach__doc__ },
-    { "wait", (PyCFunction)wait, METH_VARARGS, wait__doc__ },
+    { "wait_event", (PyCFunction)wait_event, METH_VARARGS, wait_event__doc__ },
     {NULL}  /* Sentinel */
 };
 
