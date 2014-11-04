@@ -5,12 +5,10 @@
     <ClCompile Include="dllmain.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="process.c" />
-    <ClCompile Include="debugevent.c" />
     <ClCompile Include="thread.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dbgui.h" />
-    <ClInclude Include="debugevent.h" />
     <ClInclude Include="bones.h" />
     <ClInclude Include="internal.h" />
   </ItemGroup>

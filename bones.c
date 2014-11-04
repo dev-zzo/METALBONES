@@ -30,22 +30,19 @@ initbones(void)
     PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 
     rv = PyType_Ready(&PyBones_Debugger_Type);
-    if (rv < 0)
-    {
+    if (rv < 0) {
     }
     Py_INCREF(&PyBones_Debugger_Type);
     PyModule_AddObject(m, "Debugger", (PyObject *)&PyBones_Debugger_Type);
 
     rv = PyType_Ready(&PyBones_Thread_Type);
-    if (rv < 0)
-    {
+    if (rv < 0) {
     }
     Py_INCREF(&PyBones_Thread_Type);
     PyModule_AddObject(m, "Thread", (PyObject *)&PyBones_Thread_Type);
 
     rv = PyType_Ready(&PyBones_Process_Type);
-    if (rv < 0)
-    {
+    if (rv < 0) {
     }
     Py_INCREF(&PyBones_Process_Type);
     PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);

@@ -44,8 +44,7 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     PyBones_ThreadObject *self;
 
     self = (PyBones_ThreadObject *)type->tp_alloc(type, 0);
-    if (self != NULL)
-    {
+    if (self != NULL) {
         /* Init fields */
         self->id = 0;
         Py_INCREF(Py_None);
@@ -63,13 +62,15 @@ init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
     PyObject *process = NULL;
 
     /* id, process, start_address, teb_address */
-    if (!PyArg_ParseTuple(args, "iOkk", &self->id, &process, &self->start_address, &self->teb_address))
-    {
+    if (!PyArg_ParseTuple(args, "iOkk",
+        &self->id,
+        &process,
+        &self->start_address,
+        &self->teb_address)) {
         return -1;
     }
 
-    if (process)
-    {
+    if (process) {
         PyObject *tmp = self->process;
         Py_INCREF(process);
         self->process = process;

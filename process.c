@@ -45,14 +45,12 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     PyBones_ProcessObject *self;
 
     self = (PyBones_ProcessObject *)type->tp_alloc(type, 0);
-    if (self != NULL)
-    {
+    if (self != NULL) {
         /* Init fields */
         self->id = 0;
         self->handle = NULL;
         self->threads = PyDict_New();
-        if (!self->threads)
-        {
+        if (!self->threads) {
             Py_DECREF(self);
             return NULL;
         }
@@ -67,12 +65,30 @@ init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
     PyObject *process = NULL;
 
     /* id, handle, image_base */
-    if (!PyArg_ParseTuple(args, "ikk", &self->id, &self->handle, &self->image_base))
-    {
+    if (!PyArg_ParseTuple(args, "ikk", &self->id, &self->handle, &self->image_base)) {
         return -1;
     }
 
     return 0;
+}
+
+int
+_PyBones_Process_AddThread(PyBones_ProcessObject *self, PyObject *thread_id, PyObject *thread)
+{
+    return PyDict_SetItem(self->threads, thread_id, thread);
+}
+
+PyObject *
+_PyBones_Process_DelThread(PyBones_ProcessObject *self, PyObject *thread_id)
+{
+    PyObject *thread;
+    
+    thread = PyDict_GetItem(self->threads, thread_id);
+    if (thread) {
+        Py_INCREF(thread);
+        PyDict_DelItem(self->threads, thread_id);
+    }
+    return thread;
 }
 
 /* Process object field accessors */
