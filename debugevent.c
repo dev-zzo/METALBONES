@@ -1,6 +1,7 @@
 ﻿#include <Python.h>
 #include <Windows.h>
 
+#include "internal.h"
 #include "debugevent.h"
 
 /* ------------------------------------------------------------------------- */

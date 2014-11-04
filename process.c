@@ -1,7 +1,7 @@
 #include <Python.h>
 #include <Windows.h>
 
-#include "bones.h"
+#include "internal.h"
 
 /* Process object */
 
@@ -9,6 +9,7 @@ typedef struct {
     PyObject_HEAD
 
     UINT id; /* Unique process ID */
+    HANDLE handle; /* Process handle */
     PVOID image_base; /* Base address of the process image */
 
     PyObject *threads; /* A dict mapping thread id -> thread object */
@@ -48,6 +49,7 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     {
         /* Init fields */
         self->id = 0;
+        self->handle = NULL;
         self->threads = PyDict_New();
         if (!self->threads)
         {
@@ -64,8 +66,8 @@ init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *process = NULL;
 
-    /* id, image_base */
-    if (!PyArg_ParseTuple(args, "ik", &self->id, &self->image_base))
+    /* id, handle, image_base */
+    if (!PyArg_ParseTuple(args, "ikk", &self->id, &self->handle, &self->image_base))
     {
         return -1;
     }
@@ -90,9 +92,7 @@ get_image_base(PyBones_ProcessObject *self, void *closure)
 static PyObject *
 get_threads(PyBones_ProcessObject *self, void *closure)
 {
-    PyObject *p = self->threads;
-    Py_INCREF(p);
-    return p;
+    return PyDictProxy_New(self->threads);
 }
 
 static PyGetSetDef getseters[] =

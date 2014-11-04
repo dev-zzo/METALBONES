@@ -3,12 +3,16 @@
 
 #include <winternl.h>
 
-/* Structures not defined for userland programs */
+/* Stuff not defined for userland programs */
 
 typedef struct {
     HANDLE UniqueProcess;
     HANDLE UniqueThread;
 } CLIENT_ID, *PCLIENT_ID;
+
+#ifndef STATUS_ALERTED
+#define STATUS_ALERTED                   ((NTSTATUS)0x00000101L)
+#endif
 
 /* DbgUI related definitions */
 

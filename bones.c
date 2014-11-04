@@ -1,6 +1,6 @@
 #include <Python.h>
 
-#include "bones.h"
+#include "internal.h"
 
 /* NT status exception */
 PyObject *PyBones_NtStatusError;
@@ -49,4 +49,6 @@ initbones(void)
     }
     Py_INCREF(&PyBones_Process_Type);
     PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);
+
+    DEBUG_PRINT("METALBONES core loaded.\n");
 }

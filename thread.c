@@ -1,7 +1,7 @@
 #include <Python.h>
 #include <Windows.h>
 
-#include "bones.h"
+#include "internal.h"
 
 /* Thread object */
 

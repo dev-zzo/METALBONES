@@ -1,7 +1,7 @@
 #include <Python.h>
 #include <Windows.h>
 
-#include "bones.h"
+#include "internal.h"
 #include "dbgui.h"
 
 static PZWCREATEDEBUGOBJECT ZwCreateDebugObject;
@@ -135,109 +135,216 @@ detach(PyBones_DebuggerObject *self, PyObject *args)
     return 0;
 }
 
-static PyObject *
-wait(PyBones_DebuggerObject *self, PyObject *args)
+static int
+handle_cb_result(PyObject *cb_result)
 {
-    DBGUI_WAIT_STATE_CHANGE info;
-    LARGE_INTEGER timeout;
-    NTSTATUS status;
+    PyObject *exc;
 
-    if (!PyArg_ParseTuple(args, "|K", &timeout.QuadPart))
+    if (cb_result)
     {
-        return NULL;
+        /* OK, this should be None */
+        Py_DECREF(cb_result);
+        return 0;
     }
 
-    status = NtWaitForDebugEvent(self->dbgui_object, TRUE, &timeout, &info);
-    if (!NT_SUCCESS(status))
+    /* Failed -- no method? */
+    exc = PyErr_Occurred();
+    if (PyErr_GivenExceptionMatches(exc, PyExc_AttributeError))
     {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
-        return NULL;
+        PyErr_Clear();
+        return 0;
     }
+    return -1;
+}
 
-    switch (info.NewState)
+static int
+handle_create_thread(PyBones_DebuggerObject *self, PyObject *thread_id, HANDLE handle, PyObject *process, PVOID start_address)
+{
+    PyObject *arglist;
+    PyObject *cb_result;
+    PyObject *thread;
+
+    /* Create new thread object */
+    arglist = Py_BuildValue("(OkOkk)", /* id, handle, process, start_address, teb_address */
+        thread_id,
+        handle,
+        process,
+        start_address,
+        0);
+    if (arglist)
+    {
+        thread = PyObject_CallObject((PyObject *)&PyBones_Thread_Type, arglist);
+        Py_DECREF(arglist);
+        if (thread)
+        {
+            PyObject *threads;
+            /* Add it to dict */
+            threads = PyObject_GetAttrString(process, "threads");
+            if (threads)
+            {
+                PyDict_SetItem(threads, thread_id, thread);
+                Py_DECREF(threads);
+            }
+
+            /* Call the handler method */
+            cb_result = PyObject_CallMethod((PyObject *)self, "on_thread_create", "O", thread);
+            handle_cb_result(cb_result);
+
+            Py_DECREF(thread);
+        }
+    }
+    return 0;
+}
+
+static PyObject *
+handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
+{
+    DWORD pid = (DWORD)info->AppClientId.UniqueProcess;
+    DWORD tid = (DWORD)info->AppClientId.UniqueThread;
+    PyObject *result = NULL;
+    PyObject *arglist;
+    PyObject *cb_result;
+    PyObject *process_id = NULL, *process = NULL;
+    PyObject *thread_id = NULL, *thread = NULL;
+
+    process_id = PyInt_FromLong(pid);
+    if (!process_id)
+        goto exit0;
+    thread_id = PyInt_FromLong(tid);
+    if (!thread_id)
+        goto exit1;
+
+    switch (info->NewState)
     {
     case DbgIdle:
-    case DbgReplyPending:
         /* No idea how to handle these. */
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgIdle.\n", pid, tid);
         break;
 
-    case DbgCreateThreadStateChange:
+    case DbgReplyPending:
+        /* No idea how to handle these. */
+        DEBUG_PRINT("BONES: [%d/%d] Caught DbgReplyPending.\n", pid, tid);
         break;
 
     case DbgCreateProcessStateChange:
+        DEBUG_PRINT("BONES: [%d] Process created.\n", pid);
         {
-            PyObject *arglist;
-            PyObject *process;
-            PyObject *process_id;
-
-            process_id = PyInt_FromLong(info.AppClientId.UniqueProcess);
-            arglist = PyTuple_Pack(2,
+            /* Create new process object */
+            arglist = Py_BuildValue("(Okk)",
                 process_id,
-                PyLong_FromUnsignedLong((UINT_PTR)info.StateInfo.CreateProcessInfo.NewProcess.BaseOfImage));
-            process = PyObject_CallObject(&PyBones_Process_Type, arglist);
-            Py_DECREF(arglist);
-            if (!process)
+                info->StateInfo.CreateProcessInfo.HandleToProcess,
+                info->StateInfo.CreateProcessInfo.NewProcess.BaseOfImage);
+            if (arglist)
             {
-                /* TBD */
-                break;
-            }
+                process = PyObject_CallObject((PyObject *)&PyBones_Process_Type, arglist);
+                Py_DECREF(arglist);
+                if (process)
+                {
+                    /* Add it to dict */
+                    PyDict_SetItem(self->processes, process_id, process);
 
-            if (PyDict_SetItem(self->processes, process_id, process) < 0)
+                    /* Call the handler method */
+                    cb_result = PyObject_CallMethod((PyObject *)self, "on_process_create", "O", process);
+                    handle_cb_result(cb_result);
+
+                    handle_create_thread(
+                        self,
+                        thread_id,
+                        info->StateInfo.CreateProcessInfo.HandleToThread,
+                        process,
+                        info->StateInfo.CreateProcessInfo.NewProcess.InitialThread.StartAddress);
+
+                    Py_DECREF(process);
+                }
+            }
+        }
+        break;
+
+    case DbgExitProcessStateChange:
+        DEBUG_PRINT("BONES: [%d] Process exited.\n", pid);
+        {
+            /* Borrowed. */
+            process = PyDict_GetItem(self->processes, process_id);
+            if (process)
             {
-                /* TBD */
-                break;
+                /* Call the handler method */
+                cb_result = PyObject_CallMethod((PyObject *)self, "on_process_exit",
+                    "Ok",
+                    process,
+                    info->StateInfo.ExitProcess.ExitStatus);
+                handle_cb_result(cb_result);
+
+                /* Remove the process */
+                PyDict_DelItem(self->processes, process_id);
+            }
+            else
+            {
+                /* No such process? */
+                DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
+            }
+        }
+        break;
+
+    case DbgCreateThreadStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Thread created.\n", pid, tid);
+        {
+            /* Borrowed. */
+            process = PyDict_GetItem(self->processes, process_id);
+            if (process)
+            {
+                handle_create_thread(
+                    self,
+                    thread_id,
+                    info->StateInfo.CreateThread.HandleToThread,
+                    process,
+                    info->StateInfo.CreateThread.NewThread.StartAddress);
+            }
+            else
+            {
+                /* No such process? */
+                DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
             }
         }
         break;
 
     case DbgExitThreadStateChange:
-        break;
-
-    case DbgExitProcessStateChange:
+        DEBUG_PRINT("BONES: [%d/%d] Thread exited.\n", pid, tid);
         {
-            PyObject *process_id;
-            PyObject *process;
-
-            process_id = PyInt_FromLong(info.AppClientId.UniqueProcess);
+            /* Borrowed. */
             process = PyDict_GetItem(self->processes, process_id);
             if (process)
             {
-                PyObject *method_name;
-                PyObject *result;
-
-                /* Call the handler method */
-                method_name = PyString_FromString("on_process_exit");
-                result = PyObject_CallMethodObjArgs(self, method_name, process, NULL);
-                if (result)
+                PyObject *threads;
+                /* Add it to dict */
+                threads = PyObject_GetAttrString(process, "threads");
+                if (threads)
                 {
-                    /* OK */
-                    Py_DECREF(result);
-                }
-                else
-                {
-                    PyObject *exc;
-                    /* Failed -- no method? */
-                    exc = PyErr_Occurred();
-                    if (PyErr_GivenExceptionMatches(exc, &PyExc_AttributeError))
+                    /* Borrowed. */
+                    thread = PyDict_GetItem(threads, thread_id);
+                    if (thread)
                     {
-                        PyErr_Clear();
+                        /* Call the handler method */
+                        cb_result = PyObject_CallMethod((PyObject *)self, "on_thread_exit",
+                            "Ok",
+                            thread,
+                            info->StateInfo.ExitThread.ExitStatus);
+                        handle_cb_result(cb_result);
+
+                        /* Remove the thread */
+                        PyDict_DelItem(threads, thread_id);
                     }
                     else
                     {
-                        /* Pass the exception to the interpreter */
+                        DEBUG_PRINT("BONES: [%d/%d] No such thread in the process being debugged.\n", pid, tid);
                     }
-                }
-                Py_DECREF(method_name);
 
-                /* Remove the process */
-                if (PyDict_DelItem(self->processes, process_id) < 0)
-                {
-                    /* TBD */
+                    Py_DECREF(threads);
                 }
             }
             else
             {
                 /* No such process? */
+                DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
             }
         }
         break;
@@ -257,6 +364,53 @@ wait(PyBones_DebuggerObject *self, PyObject *args)
     case DbgUnloadDllStateChange:
         break;
     }
+
+exit2:
+    Py_DECREF(process_id);
+exit1:
+    Py_DECREF(thread_id);
+exit0:
+    return result;
+}
+
+static PyObject *
+wait(PyBones_DebuggerObject *self, PyObject *args)
+{
+    DBGUI_WAIT_STATE_CHANGE info;
+    unsigned int wait_time = UINT_MAX;
+    LARGE_INTEGER timeout;
+    PLARGE_INTEGER timeout_ptr = NULL;
+    NTSTATUS status;
+
+    if (!PyArg_ParseTuple(args, "|I", &wait_time))
+    {
+        return NULL;
+    }
+
+    if (wait_time < UINT_MAX)
+    {
+        timeout.QuadPart = UInt32x32To64(-10000, wait_time);
+        timeout_ptr = &timeout;
+    }
+
+    do
+    {
+        status = NtWaitForDebugEvent(self->dbgui_object, TRUE, timeout_ptr, &info);
+    } while (status == STATUS_ALERTED || status == STATUS_USER_APC);
+
+    if (status == STATUS_TIMEOUT)
+    {
+        Py_INCREF(Py_None);
+        return Py_None;
+    }
+
+    if (!NT_SUCCESS(status))
+    {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        return NULL;
+    }
+
+    return handle_state_change(self, &info);
 }
 
 /* Debugger object method definitions */
@@ -271,9 +425,7 @@ static PyMethodDef methods[] = {
 static PyObject *
 get_processes(PyBones_DebuggerObject *self, void *closure)
 {
-    PyObject *p = self->processes;
-    Py_INCREF(p);
-    return p;
+    return PyDictProxy_New(self->processes);
 }
 
 static PyGetSetDef getseters[] =
