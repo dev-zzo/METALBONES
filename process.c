@@ -11,6 +11,7 @@ typedef struct {
     UINT id; /* Unique process ID */
     HANDLE handle; /* Process handle */
     PVOID image_base; /* Base address of the process image */
+    NTSTATUS exit_status; /* Filled when a process exits */
 
     PyObject *threads; /* A dict mapping thread id -> thread object */
 
@@ -49,6 +50,8 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         /* Init fields */
         self->id = 0;
         self->handle = NULL;
+        self->image_base = NULL;
+        self->exit_status = 0;
         self->threads = PyDict_New();
         if (!self->threads) {
             Py_DECREF(self);
@@ -93,6 +96,12 @@ _PyBones_Process_DelThread(PyBones_ProcessObject *self, PyObject *thread_id)
 
 /* Process object field accessors */
 
+void
+_PyBones_Process_SetExitStatus(PyBones_ProcessObject *self, UINT status)
+{
+    self->exit_status = status;
+}
+
 static PyObject *
 get_id(PyBones_ProcessObject *self, void *closure)
 {
@@ -106,6 +115,12 @@ get_image_base(PyBones_ProcessObject *self, void *closure)
 }
 
 static PyObject *
+get_exit_status(PyBones_ProcessObject *self, void *closure)
+{
+    return PyLong_FromUnsignedLong(self->exit_status);
+}
+
+static PyObject *
 get_threads(PyBones_ProcessObject *self, void *closure)
 {
     return PyDictProxy_New(self->threads);
@@ -115,6 +130,7 @@ static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique process ID", NULL },
     { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
+    { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the process exits", NULL },
     { "threads", (getter)get_threads, NULL, "Threads running within the process", NULL },
     {NULL}  /* Sentinel */
 };
