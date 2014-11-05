@@ -37,6 +37,7 @@ static void
 dealloc(PyBones_ThreadObject *self)
 {
     clear(self);
+    CloseHandle(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -157,7 +158,7 @@ PyTypeObject PyBones_Thread_Type = {
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,  /*tp_flags*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,  /*tp_flags*/
     "Thread object",  /*tp_doc*/
     (traverseproc)traverse,  /* tp_traverse */
     (inquiry)clear,  /* tp_clear */
