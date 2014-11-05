@@ -3,6 +3,15 @@
 
 #include "internal.h"
 
+int
+_PyBones_Context_Get(PyObject *self, HANDLE Thread);
+
+int
+_PyBones_Context_Set(PyObject *self, HANDLE Thread);
+
+int
+PyBones_Context_Check(PyObject *o);
+
 /* Thread object */
 
 typedef struct {
@@ -125,6 +134,38 @@ get_exit_status(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
+static PyObject *
+get_context(PyBones_ThreadObject *self, void *closure)
+{
+    PyObject *context;
+
+    context = PyObject_CallObject((PyObject *)&PyBones_Context_Type, NULL);
+    if (context) {
+        if (_PyBones_Context_Get(context, self->handle) < 0) {
+            Py_DECREF(context);
+            context = NULL;
+        }
+    }
+
+    return context;
+}
+
+static int
+set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
+{
+    if (!value) {
+        PyErr_SetString(PyExc_TypeError, "Context cannot be deleted.");
+        return -1;
+    }
+
+    if (!PyBones_Context_Check(value)) {
+        PyErr_SetString(PyExc_TypeError, "Expected an instance of Context.");
+        return -1;
+    }
+
+    return _PyBones_Context_Set(value, self->handle);
+}
+
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique thread ID", NULL },
@@ -132,6 +173,7 @@ static PyGetSetDef getseters[] = {
     { "start_address", (getter)get_start_address, NULL, "Thread starting address", NULL },
     { "teb_address", (getter)get_teb_address, NULL, "Address of thread's enviroment block", NULL },
     { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the thread exits", NULL },
+    { "context", (getter)get_context, (setter)set_context, "Thread's CPU context", NULL },
     {NULL}  /* Sentinel */
 };
 

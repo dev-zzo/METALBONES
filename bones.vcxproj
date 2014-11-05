@@ -50,6 +50,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="bones.c" />
+    <ClCompile Include="context.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="dllmain.c" />
     <ClCompile Include="process.c" />

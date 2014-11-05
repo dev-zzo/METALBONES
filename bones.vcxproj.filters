@@ -6,6 +6,7 @@
     <ClCompile Include="debugger.c" />
     <ClCompile Include="process.c" />
     <ClCompile Include="thread.c" />
+    <ClCompile Include="context.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dbgui.h" />

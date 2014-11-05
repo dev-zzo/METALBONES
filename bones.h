@@ -7,5 +7,6 @@ extern PyObject *PyBones_Win32Error;
 extern PyTypeObject PyBones_Debugger_Type;
 extern PyTypeObject PyBones_Thread_Type;
 extern PyTypeObject PyBones_Process_Type;
+extern PyTypeObject PyBones_Context_Type;
 
 #endif // __BONES_INCLUDED

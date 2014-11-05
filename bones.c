@@ -54,5 +54,12 @@ initbones(void)
     Py_INCREF(&PyBones_Process_Type);
     PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);
 
+    PyBones_Context_Type.tp_new = PyType_GenericNew;
+    rv = PyType_Ready(&PyBones_Context_Type);
+    if (rv < 0) {
+    }
+    Py_INCREF(&PyBones_Context_Type);
+    PyModule_AddObject(m, "Context", (PyObject *)&PyBones_Context_Type);
+
     DEBUG_PRINT("METALBONES core loaded.\n");
 }
