@@ -500,7 +500,9 @@ wait_event(PyBones_DebuggerObject *self, PyObject *args)
     }
 
     if (wait_time < UINT_MAX) {
-        timeout.QuadPart = UInt32x32To64(-10000, wait_time);
+        /* A negative value specifies an interval relative 
+           to the current time, in 100-nanosecond units. */
+        timeout.QuadPart = wait_time * -10000LL;
         timeout_ptr = &timeout;
     }
 
