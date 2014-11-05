@@ -175,6 +175,7 @@ spawn(PyBones_DebuggerObject *self, PyObject *args)
     status = NtDebugActiveProcess(process_info.hProcess, self->dbgui_object);
     ResumeThread(process_info.hThread);
     if (!NT_SUCCESS(status)) {
+        DEBUG_PRINT("BONES: Attaching to the started process has failed.\n");
         TerminateProcess(process_info.hProcess, -1);
         PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         goto exit1;

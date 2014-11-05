@@ -95,6 +95,34 @@ _PyBones_Process_DelThread(PyBones_ProcessObject *self, PyObject *thread_id)
     return thread;
 }
 
+PyDoc_STRVAR(terminate__doc__,
+"terminate(self, exit_code)\n\n\
+Start the termination of this process.");
+
+PyObject *
+PyBones_Process_Terminate(PyBones_ProcessObject *self, PyObject *args)
+{
+    PyObject *result = NULL;
+    UINT exit_code = 0xDEADBEEF;
+
+    if (!PyArg_ParseTuple(args, "I", &exit_code)) {
+        return NULL;
+    }
+
+    if (!TerminateProcess(self->handle, exit_code)) {
+        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+        return NULL;
+    }
+
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+static PyMethodDef methods[] = {
+    { "terminate", (PyCFunction)PyBones_Process_Terminate, METH_VARARGS, terminate__doc__ },
+    {NULL}  /* Sentinel */
+};
+
 /* Process object field accessors */
 
 void
@@ -167,7 +195,7 @@ PyTypeObject PyBones_Process_Type = {
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
     0,  /* tp_iternext */
-    0,  /* tp_methods */
+    methods,  /* tp_methods */
     0,  /* tp_members */
     getseters,  /* tp_getset */
     0,  /* tp_base */
