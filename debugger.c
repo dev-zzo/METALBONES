@@ -19,7 +19,7 @@ static void
 dealloc(PyBones_DebuggerObject* self)
 {
     if (self->dbgui_object) {
-        CloseHandle(self->dbgui_object);
+        NtClose(self->dbgui_object);
         self->dbgui_object = NULL;
     }
 
@@ -104,10 +104,10 @@ spawn(PyBones_DebuggerObject *self, PyObject *args)
     }
 
     status = NtDebugActiveProcess(process_info.hProcess, self->dbgui_object);
-    ResumeThread(process_info.hThread);
+    NtResumeThread(process_info.hThread, NULL);
     if (!NT_SUCCESS(status)) {
         DEBUG_PRINT("BONES: Attaching to the started process has failed.\n");
-        TerminateProcess(process_info.hProcess, -1);
+        NtTerminateProcess(process_info.hProcess, -1);
         PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         goto exit1;
     }
@@ -117,8 +117,8 @@ spawn(PyBones_DebuggerObject *self, PyObject *args)
 
 exit1:
     /* We don't need these -- we'll get ones with debug events */
-    CloseHandle(process_info.hThread);
-    CloseHandle(process_info.hProcess);
+    NtClose(process_info.hThread);
+    NtClose(process_info.hProcess);
 exit0:
     return result;
 }

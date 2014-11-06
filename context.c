@@ -2,6 +2,7 @@
 #include <Windows.h>
 
 #include "internal.h"
+#include "winternals.h"
 
 #define REG_LONG32  (1<<31)
 #define REG_LONGDBL (1<<30)
@@ -14,21 +15,29 @@ typedef struct {
 } PyBones_ContextObject;
 
 int
-_PyBones_Context_Get(PyBones_ContextObject *self, HANDLE thread)
+_PyBones_Context_Get(PyObject *self, HANDLE thread)
 {
-    self->ctx.ContextFlags = CONTEXT_ALL;
-    if (!GetThreadContext(thread, &self->ctx)) {
-        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+    PyBones_ContextObject *_self = (PyBones_ContextObject *)self;
+    NTSTATUS status;
+
+    _self->ctx.ContextFlags = CONTEXT_ALL;
+    status = NtGetContextThread(thread, &_self->ctx);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return -1;
     }
     return 0;
 }
 
 int
-_PyBones_Context_Set(PyBones_ContextObject *self, HANDLE thread)
+_PyBones_Context_Set(PyObject *self, HANDLE thread)
 {
-    if (!SetThreadContext(thread, &self->ctx)) {
-        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+    PyBones_ContextObject *_self = (PyBones_ContextObject *)self;
+    NTSTATUS status;
+
+    status = NtSetContextThread(thread, &_self->ctx);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return -1;
     }
     return 0;

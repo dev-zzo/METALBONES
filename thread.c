@@ -48,7 +48,7 @@ static void
 dealloc(PyBones_ThreadObject *self)
 {
     clear(self);
-    CloseHandle(self->handle);
+    NtClose(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 

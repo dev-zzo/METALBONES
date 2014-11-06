@@ -57,6 +57,10 @@ typedef struct _IO_STATUS_BLOCK {
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
 
 
+NTSYSAPI NTSTATUS NTAPI NtClose(
+    HANDLE Handle);
+
+
 /*
  * THREADS
  */
@@ -97,6 +101,18 @@ NTSYSAPI NTSTATUS NTAPI NtQueryInformationThread(
     PVOID ThreadInformation,
     ULONG ThreadInformationLength,
     PULONG ReturnLength);
+
+NTSYSAPI NTSTATUS NTAPI NtGetContextThread(
+    HANDLE ThreadHandle,
+    PCONTEXT pContext);
+
+NTSYSAPI NTSTATUS NTAPI NtSetContextThread(
+    HANDLE ThreadHandle,
+    PCONTEXT pContext);
+
+NTSYSAPI NTSTATUS NTAPI NtResumeThread(
+    HANDLE ThreadHandle,
+    PULONG SuspendCount);
 
 
 /*
@@ -243,12 +259,16 @@ typedef struct _PROCESS_BASIC_INFORMATION {
     ULONG_PTR InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION,*PPROCESS_BASIC_INFORMATION;
 
-NTSYSAPI NTSTATUS NTAPI ZwQueryInformationProcess(
+NTSYSAPI NTSTATUS NTAPI NtQueryInformationProcess(
     HANDLE ProcessHandle,
     PROCESS_INFORMATION_CLASS ProcessInformationClass,
     PVOID ProcessInformation,
     ULONG ProcessInformationLength,
     PULONG ReturnLength);
+
+NTSYSAPI NTSTATUS NTAPI NtTerminateProcess(
+    HANDLE ProcessHandle,
+    NTSTATUS ExitStatus);
 
 
 /*
@@ -292,7 +312,7 @@ NTSYSAPI NTSTATUS NTAPI NtWriteVirtualMemory(
     ULONG NumberOfBytesToWrite,
     PULONG NumberOfBytesWritten);
 
-NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(
+NTSYSAPI NTSTATUS NTAPI NtQueryVirtualMemory(
     HANDLE ProcessHandle,
     PVOID BaseAddress,
     MEMORY_INFORMATION_CLASS MemoryInformationClass,

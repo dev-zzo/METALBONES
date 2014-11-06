@@ -43,7 +43,7 @@ static void
 dealloc(PyBones_ProcessObject *self)
 {
     clear(self);
-    CloseHandle(self->handle);
+    NtClose(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -81,7 +81,7 @@ init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    status = ZwQueryInformationProcess(
+    status = NtQueryInformationProcess(
         self->handle,
         ProcessBasicInformation,
         &pbi,
@@ -191,7 +191,7 @@ PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
         WCHAR __space[0x210];
     } buffer;
 
-    status = ZwQueryVirtualMemory(
+    status = NtQueryVirtualMemory(
         _self->handle,
         address,
         MemorySectionName,
@@ -218,14 +218,16 @@ PyBones_Process_Terminate(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PyObject *result = NULL;
+    NTSTATUS status;
     UINT exit_code = 0xDEADBEEF;
 
     if (!PyArg_ParseTuple(args, "I", &exit_code)) {
         return NULL;
     }
 
-    if (!TerminateProcess(_self->handle, exit_code)) {
-        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+    status = NtTerminateProcess(_self->handle, exit_code);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
         return NULL;
     }
 
