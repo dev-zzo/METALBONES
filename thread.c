@@ -96,12 +96,6 @@ init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
 
 /* Thread object field accessors */
 
-void
-_PyBones_Thread_SetExitStatus(PyBones_ThreadObject *self, UINT status)
-{
-    self->exit_status = status;
-}
-
 static PyObject *
 get_id(PyBones_ThreadObject *self, void *closure)
 {
@@ -132,6 +126,12 @@ static PyObject *
 get_exit_status(PyBones_ThreadObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong(self->exit_status);
+}
+
+void
+_PyBones_Thread_SetExitStatus(PyBones_ThreadObject *self, UINT status)
+{
+    self->exit_status = status;
 }
 
 static PyObject *

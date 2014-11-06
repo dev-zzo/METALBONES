@@ -346,7 +346,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgCreateProcessStateChange:
-        DEBUG_PRINT("BONES: [%d] Process created.\n", pid);
+        /* DEBUG_PRINT("BONES: [%d] Process created.\n", pid); */
         /* Create new process object */
         arglist = Py_BuildValue("(Okk)",
             process_id,
@@ -377,7 +377,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgExitProcessStateChange:
-        DEBUG_PRINT("BONES: [%d] Process exited.\n", pid);
+        /* DEBUG_PRINT("BONES: [%d] Process exited.\n", pid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
         if (process) {
@@ -397,7 +397,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgCreateThreadStateChange:
-        DEBUG_PRINT("BONES: [%d/%d] Thread created.\n", pid, tid);
+        /* DEBUG_PRINT("BONES: [%d/%d] Thread created.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
         if (process) {
@@ -416,7 +416,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgExitThreadStateChange:
-        DEBUG_PRINT("BONES: [%d/%d] Thread exited.\n", pid, tid);
+        /* DEBUG_PRINT("BONES: [%d/%d] Thread exited.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
         if (process) {

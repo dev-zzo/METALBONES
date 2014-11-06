@@ -125,12 +125,6 @@ static PyMethodDef methods[] = {
 
 /* Process object field accessors */
 
-void
-_PyBones_Process_SetExitStatus(PyBones_ProcessObject *self, UINT status)
-{
-    self->exit_status = status;
-}
-
 static PyObject *
 get_id(PyBones_ProcessObject *self, void *closure)
 {
@@ -147,6 +141,12 @@ static PyObject *
 get_exit_status(PyBones_ProcessObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong(self->exit_status);
+}
+
+void
+_PyBones_Process_SetExitStatus(PyBones_ProcessObject *self, UINT status)
+{
+    self->exit_status = status;
 }
 
 static PyObject *

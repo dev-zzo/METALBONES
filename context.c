@@ -49,7 +49,7 @@ to_str(PyBones_ContextObject *self)
     sprintf(buffer,
         "eax=%08x ebx=%08x ecx=%08x edx=%08x esi=%08x edi=%08x\n"
         "eip=%08x esp=%08x ebp=%08x efl=%08x %s\n"
-        "cs=%04x ss=%04x ds=%04x es=%04x fs=%04x gs=%04x",
+        "cs=%04x  ss=%04x  ds=%04x es=%04x  fs=%04x  gs=%04x",
         c->Eax, c->Ebx, c->Ecx, c->Edx, c->Esi, c->Edi,
         c->Eip, c->Esp, c->Ebp, c->EFlags, "FLAGS",
         c->SegCs, c->SegSs, c->SegDs, c->SegEs, c->SegFs, c->SegGs);
