@@ -8,5 +8,6 @@ extern PyTypeObject PyBones_Debugger_Type;
 extern PyTypeObject PyBones_Thread_Type;
 extern PyTypeObject PyBones_Process_Type;
 extern PyTypeObject PyBones_Context_Type;
+extern PyTypeObject PyBones_Module_Type;
 
 #endif // __BONES_INCLUDED

@@ -2,6 +2,7 @@
 #include <Windows.h>
 
 #include "internal.h"
+#include "winternals.h"
 
 int
 _PyBones_Context_Get(PyObject *self, HANDLE Thread);
@@ -21,8 +22,9 @@ typedef struct {
     HANDLE handle; /* Thread handle */
     PyObject * process; /* Owning process */
     PVOID start_address; /* Where the thread starts */
-    PVOID teb_address; /* Address of the thread's environment block */
     NTSTATUS exit_status; /* Filled when a thread exits */
+
+    PVOID teb_address; /* Address of the thread's environment block */
 
 } PyBones_ThreadObject;
 
@@ -58,12 +60,8 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self = (PyBones_ThreadObject *)type->tp_alloc(type, 0);
     if (self != NULL) {
         /* Init fields */
-        self->id = 0;
         Py_INCREF(Py_None);
         self->process = Py_None;
-        self->start_address = 0;
-        self->teb_address = 0;
-        self->exit_status = 0;
     }
 
     return (PyObject *)self;
@@ -73,14 +71,15 @@ static int
 init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *process = NULL;
+    NTSTATUS status;
+    THREAD_BASIC_INFORMATION tbi;
 
-    /* id, handle, process, start_address, teb_address */
-    if (!PyArg_ParseTuple(args, "ikOkk",
+    /* id, handle, process, start_address */
+    if (!PyArg_ParseTuple(args, "ikOk",
         &self->id,
         &self->handle,
         &process,
-        &self->start_address,
-        &self->teb_address)) {
+        &self->start_address)) {
         return -1;
     }
 
@@ -90,6 +89,21 @@ init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
         self->process = process;
         Py_XDECREF(tmp);
     }
+
+    /* Query the TEB */
+    status = NtQueryInformationThread(
+        self->handle,
+        ThreadBasicInformation,
+        &tbi,
+        sizeof(tbi),
+        NULL);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        Py_DECREF(self);
+        return -1;
+    }
+
+    self->teb_address = tbi.TebBaseAddress;
 
     return 0;
 }
@@ -122,6 +136,13 @@ get_teb_address(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong((UINT_PTR)self->teb_address);
 }
 
+void *
+_PyBones_Thread_GetTebAddress(PyObject *self)
+{
+    PyBones_ThreadObject *_self = (PyBones_ThreadObject *)self;
+    return _self->teb_address;
+}
+
 static PyObject *
 get_exit_status(PyBones_ThreadObject *self, void *closure)
 {
@@ -129,9 +150,10 @@ get_exit_status(PyBones_ThreadObject *self, void *closure)
 }
 
 void
-_PyBones_Thread_SetExitStatus(PyBones_ThreadObject *self, UINT status)
+_PyBones_Thread_SetExitStatus(PyObject *self, unsigned int status)
 {
-    self->exit_status = status;
+    PyBones_ThreadObject *_self = (PyBones_ThreadObject *)self;
+    _self->exit_status = status;
 }
 
 static PyObject *
@@ -171,7 +193,6 @@ static PyGetSetDef getseters[] = {
     { "id", (getter)get_id, NULL, "Unique thread ID", NULL },
     { "process", (getter)get_process, NULL, "Owning process", NULL },
     { "start_address", (getter)get_start_address, NULL, "Thread starting address", NULL },
-    { "teb_address", (getter)get_teb_address, NULL, "Address of thread's enviroment block", NULL },
     { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the thread exits", NULL },
     { "context", (getter)get_context, (setter)set_context, "Thread's CPU context", NULL },
     {NULL}  /* Sentinel */

@@ -8,6 +8,9 @@ PyObject *PyBones_Win32Error;
 /* NT status exception */
 PyObject *PyBones_NtStatusError;
 
+int
+init_ntdll_pointers(void);
+
 /* Module method definitions */
 static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
@@ -17,11 +20,26 @@ static PyMethodDef methods[] = {
 #define PyMODINIT_FUNC void
 #endif
 
+static int
+ready_add_type(PyObject* m, const char *name, PyTypeObject *t)
+{
+    int rv;
+
+    rv = PyType_Ready(t);
+    if (rv < 0)
+        return rv;
+
+    Py_INCREF(t);
+    return PyModule_AddObject(m, name, (PyObject *)t);
+}
+
 PyMODINIT_FUNC
 initbones(void) 
 {
     PyObject* m;
     int rv;
+
+    init_ntdll_pointers();
 
     m = Py_InitModule3(
         "bones",
@@ -36,30 +54,12 @@ initbones(void)
     Py_INCREF(PyBones_NtStatusError);
     PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 
-    rv = PyType_Ready(&PyBones_Debugger_Type);
-    if (rv < 0) {
-    }
-    Py_INCREF(&PyBones_Debugger_Type);
-    PyModule_AddObject(m, "Debugger", (PyObject *)&PyBones_Debugger_Type);
-
-    rv = PyType_Ready(&PyBones_Thread_Type);
-    if (rv < 0) {
-    }
-    Py_INCREF(&PyBones_Thread_Type);
-    PyModule_AddObject(m, "Thread", (PyObject *)&PyBones_Thread_Type);
-
-    rv = PyType_Ready(&PyBones_Process_Type);
-    if (rv < 0) {
-    }
-    Py_INCREF(&PyBones_Process_Type);
-    PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);
-
+    ready_add_type(m, "Debugger", &PyBones_Debugger_Type);
+    ready_add_type(m, "Thread", &PyBones_Thread_Type);
+    ready_add_type(m, "Process", &PyBones_Process_Type);
     PyBones_Context_Type.tp_new = PyType_GenericNew;
-    rv = PyType_Ready(&PyBones_Context_Type);
-    if (rv < 0) {
-    }
-    Py_INCREF(&PyBones_Context_Type);
-    PyModule_AddObject(m, "Context", (PyObject *)&PyBones_Context_Type);
+    ready_add_type(m, "Context", &PyBones_Context_Type);
+    ready_add_type(m, "Module", &PyBones_Module_Type);
 
     DEBUG_PRINT("METALBONES core loaded.\n");
 }

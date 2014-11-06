@@ -2,6 +2,7 @@
 #include <Windows.h>
 
 #include "internal.h"
+#include "winternals.h"
 
 /* Process object */
 
@@ -14,6 +15,9 @@ typedef struct {
     NTSTATUS exit_status; /* Filled when a process exits */
 
     PyObject *threads; /* A dict mapping thread id -> thread object */
+    PyObject *modules; /* A dict mapping module base -> module object */
+
+    PVOID peb_address; /* Address of the process' environment block */
 
 } PyBones_ProcessObject;
 
@@ -23,6 +27,7 @@ static int
 traverse(PyBones_ProcessObject *self, visitproc visit, void *arg)
 {
     Py_VISIT(self->threads);
+    Py_VISIT(self->modules);
     return 0;
 }
 
@@ -30,6 +35,7 @@ static int
 clear(PyBones_ProcessObject *self)
 {
     Py_CLEAR(self->threads);
+    Py_CLEAR(self->modules);
     return 0;
 }
 
@@ -48,13 +54,13 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
     self = (PyBones_ProcessObject *)type->tp_alloc(type, 0);
     if (self != NULL) {
-        /* Init fields */
-        self->id = 0;
-        self->handle = NULL;
-        self->image_base = NULL;
-        self->exit_status = 0;
         self->threads = PyDict_New();
         if (!self->threads) {
+            Py_DECREF(self);
+            return NULL;
+        }
+        self->modules = PyDict_New();
+        if (!self->modules) {
             Py_DECREF(self);
             return NULL;
         }
@@ -67,41 +73,150 @@ static int
 init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *process = NULL;
+    NTSTATUS status;
+    PROCESS_BASIC_INFORMATION pbi;
 
     /* id, handle, image_base */
     if (!PyArg_ParseTuple(args, "ikk", &self->id, &self->handle, &self->image_base)) {
         return -1;
     }
 
+    status = NtQueryInformationProcess(
+        self->handle,
+        ProcessBasicInformation,
+        &pbi,
+        sizeof(pbi),
+        NULL);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        Py_DECREF(self);
+        return -1;
+    }
+
+    self->peb_address = pbi.PebBaseAddress;
+    DEBUG_PRINT("BONES: peb = %08x\n", self->peb_address);
+
     return 0;
 }
 
-int
-_PyBones_Process_AddThread(PyBones_ProcessObject *self, PyObject *thread_id, PyObject *thread)
+static PyObject *
+remove_kv(PyObject *dict, PyObject *key)
 {
-    return PyDict_SetItem(self->threads, thread_id, thread);
+    PyObject *value;
+    
+    value = PyDict_GetItem(dict, key);
+    if (value) {
+        Py_INCREF(value);
+        if (PyDict_DelItem(dict, key) < 0) {
+            Py_DECREF(value);
+            value = NULL;
+        }
+    }
+    else if (!PyErr_Occurred()) {
+        /* No such thread */
+        Py_INCREF(Py_None);
+        value = Py_None;
+    }
+    return value;
+}
+
+int
+_PyBones_Process_AddThread(PyObject *self, PyObject *thread_id, PyObject *thread)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return PyDict_SetItem(_self->threads, thread_id, thread);
+}
+
+int
+_PyBones_Process_AddModule(PyObject *self, PyObject *base_address, PyObject *module)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return PyDict_SetItem(_self->modules, base_address, module);
 }
 
 PyObject *
-_PyBones_Process_DelThread(PyBones_ProcessObject *self, PyObject *thread_id)
+_PyBones_Process_DelThread(PyObject *self, PyObject *thread_id)
 {
-    PyObject *thread;
-    
-    thread = PyDict_GetItem(self->threads, thread_id);
-    if (thread) {
-        Py_INCREF(thread);
-        PyDict_DelItem(self->threads, thread_id);
-    }
-    return thread;
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return remove_kv(_self->threads, thread_id);
 }
+
+PyObject *
+_PyBones_Process_DelModule(PyObject *self, PyObject *base_address)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return remove_kv(_self->modules, base_address);
+}
+
+HANDLE
+_PyBones_Process_GetHandle(PyObject *self)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return _self->handle;
+}
+
+void *
+_PyBones_Process_GetPebAddress(PyObject *self)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return _self->peb_address;
+}
+
+int
+PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void *buffer)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+    int read = -1;
+
+    status = NtReadVirtualMemory(
+        _self->handle,
+        address,
+        buffer,
+        size,
+        &read);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+    }
+    return read;
+}
+
+PyObject *
+PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+    union {
+        MEMORY_SECTION_NAME info;
+        WCHAR __space[0x210];
+    } buffer;
+
+    status = NtQueryVirtualMemory(
+        _self->handle,
+        address,
+        MemorySectionName,
+        &buffer,
+        sizeof(buffer),
+        NULL);
+    if (!NT_SUCCESS(status)) {
+        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        return NULL;
+    }
+
+    return PyUnicode_FromUnicode(
+        buffer.info.SectionFileName.Buffer,
+        buffer.info.SectionFileName.Length / sizeof(WCHAR));
+}
+
 
 PyDoc_STRVAR(terminate__doc__,
 "terminate(self, exit_code)\n\n\
 Start the termination of this process.");
 
 PyObject *
-PyBones_Process_Terminate(PyBones_ProcessObject *self, PyObject *args)
+PyBones_Process_Terminate(PyObject *self, PyObject *args)
 {
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PyObject *result = NULL;
     UINT exit_code = 0xDEADBEEF;
 
@@ -109,7 +224,7 @@ PyBones_Process_Terminate(PyBones_ProcessObject *self, PyObject *args)
         return NULL;
     }
 
-    if (!TerminateProcess(self->handle, exit_code)) {
+    if (!TerminateProcess(_self->handle, exit_code)) {
         PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
         return NULL;
     }
@@ -144,9 +259,10 @@ get_exit_status(PyBones_ProcessObject *self, void *closure)
 }
 
 void
-_PyBones_Process_SetExitStatus(PyBones_ProcessObject *self, UINT status)
+_PyBones_Process_SetExitStatus(PyObject *self, unsigned int status)
 {
-    self->exit_status = status;
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    _self->exit_status = status;
 }
 
 static PyObject *
@@ -155,12 +271,19 @@ get_threads(PyBones_ProcessObject *self, void *closure)
     return PyDictProxy_New(self->threads);
 }
 
+static PyObject *
+get_modules(PyBones_ProcessObject *self, void *closure)
+{
+    return PyDictProxy_New(self->modules);
+}
+
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique process ID", NULL },
     { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
     { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the process exits", NULL },
     { "threads", (getter)get_threads, NULL, "Threads running within the process", NULL },
+    { "modules", (getter)get_modules, NULL, "Modules mapped within the process", NULL },
     {NULL}  /* Sentinel */
 };
 

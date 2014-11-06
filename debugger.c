@@ -2,71 +2,8 @@
 #include <Windows.h>
 
 #include "internal.h"
-#include "dbgui.h"
+#include "winternals.h"
 
-int
-_PyBones_Process_AddThread(
-    PyObject *self,
-    PyObject *thread_id,
-    PyObject *thread);
-
-PyObject *
-_PyBones_Process_DelThread(
-    PyObject *self,
-    PyObject *thread_id);
-
-void
-_PyBones_Process_SetExitStatus(PyObject *self, UINT status);
-
-void
-_PyBones_Thread_SetExitStatus(PyObject *self, UINT status);
-
-static PNTCREATEDEBUGOBJECT NtCreateDebugObject;
-static PNTDEBUGACTIVEPROCESS NtDebugActiveProcess;
-static PNTWAITFORDEBUGEVENT NtWaitForDebugEvent;
-static PNTDEBUGCONTINUE NtDebugContinue;
-static PNTREMOVEPROCESSDEBUG NtRemoveProcessDebug;
-
-static int
-init_ntdll_pointers(void)
-{
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) {
-        /* Print something? */
-        DEBUG_PRINT("BONES: Failed to get a handle for ntdll!\n");
-        return -1;
-    }
-
-    NtCreateDebugObject = (PNTCREATEDEBUGOBJECT)GetProcAddress(ntdll, "NtCreateDebugObject");
-    if (!NtCreateDebugObject) {
-        DEBUG_PRINT("BONES: Failed to get NtCreateDebugObject!\n");
-        return -1;
-    }
-    NtDebugActiveProcess = (PNTDEBUGACTIVEPROCESS)GetProcAddress(ntdll, "NtDebugActiveProcess");
-    if (!NtDebugActiveProcess) {
-        DEBUG_PRINT("BONES: Failed to get NtDebugActiveProcess!\n");
-        return -1;
-    }
-    NtWaitForDebugEvent = (PNTWAITFORDEBUGEVENT)GetProcAddress(ntdll, "NtWaitForDebugEvent");
-    if (!NtWaitForDebugEvent) {
-        DEBUG_PRINT("BONES: Failed to get NtWaitForDebugEvent!\n");
-        return -1;
-    }
-    NtDebugContinue = (PNTDEBUGCONTINUE)GetProcAddress(ntdll, "NtDebugContinue");
-    if (!NtDebugContinue) {
-        DEBUG_PRINT("BONES: Failed to get NtDebugContinue!\n");
-        return -1;
-    }
-    NtRemoveProcessDebug = (PNTREMOVEPROCESSDEBUG)GetProcAddress(ntdll, "NtRemoveProcessDebug");
-    if (!NtRemoveProcessDebug) {
-        DEBUG_PRINT("BONES: Failed to get NtRemoveProcessDebug!\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-/* Debugger object */
 
 typedef struct {
     PyObject_HEAD
@@ -77,7 +14,6 @@ typedef struct {
 
 } PyBones_DebuggerObject;
 
-/* Debugger type methods */
 
 static void
 dealloc(PyBones_DebuggerObject* self)
@@ -117,11 +53,6 @@ init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES dummy;
-
-    if (!NtCreateDebugObject && init_ntdll_pointers() < 0) {
-        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
-        return -1;
-    }
 
     /* Create a debug object */
     InitializeObjectAttributes(&dummy, NULL, 0, NULL, 0);
@@ -269,8 +200,12 @@ do_event_callback(PyObject *o, const char *method, PyObject *arg)
             result = 0;
         }
         else {
-            if (PyErr_Occurred()) {
+            PyObject *exc;
+
+            exc = PyErr_Occurred();
+            if (exc) {
                 DEBUG_PRINT("BONES: exception thrown!\n");
+                /* Verify somehow this is specifically our exception. */
                 if (PyErr_ExceptionMatches(PyExc_AttributeError)) {
                     PyErr_Clear();
                     result = 0;
@@ -295,12 +230,11 @@ handle_create_thread(
     PyObject *thread;
 
     /* Create new thread object */
-    arglist = Py_BuildValue("(OkOkk)", /* id, handle, process, start_address, teb_address */
+    arglist = Py_BuildValue("(OkOk)", /* id, handle, process, start_address */
         thread_id,
         handle,
         process,
-        start_address,
-        0);
+        start_address);
     if (arglist) {
         thread = PyObject_CallObject((PyObject *)&PyBones_Thread_Type, arglist);
         Py_DECREF(arglist);
@@ -322,8 +256,8 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     DWORD tid = (DWORD)info->AppClientId.UniqueThread;
     int result = -1;
     PyObject *arglist;
-    PyObject *process_id = NULL, *process = NULL;
-    PyObject *thread_id = NULL, *thread = NULL;
+    PyObject *process_id = NULL, *thread_id = NULL;
+    PyObject *process, *thread, *module;
 
     process_id = PyInt_FromLong(pid);
     if (!process_id)
@@ -461,7 +395,34 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
 
     case DbgLoadDllStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgLoadDllStateChange.\n", pid, tid);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
+        /* Borrowed. */
+        process = PyDict_GetItem(self->processes, process_id);
+        if (process) {
+            PyObject *base_addr;
+
+            base_addr = PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.LoadDll.BaseOfDll);
+            if (base_addr) {
+                arglist = Py_BuildValue("(OkO)",
+                    base_addr,
+                    info->StateInfo.LoadDll.FileHandle,
+                    process);
+                if (arglist) {
+                    module = PyObject_CallObject((PyObject *)&PyBones_Module_Type, arglist);
+                    Py_DECREF(arglist);
+                    if (module) {
+                        _PyBones_Process_AddModule(process, base_addr, module);
+                        result = do_event_callback((PyObject *)self, "on_module_load", module);
+                        Py_DECREF(module);
+                    }
+                }
+                Py_DECREF(base_addr);
+            }
+        }
+        else {
+            /* No such process? */
+            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
+        }
+        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgUnloadDllStateChange:
@@ -529,7 +490,6 @@ wait_event(PyBones_DebuggerObject *self, PyObject *args)
     return Py_True;
 }
 
-/* Debugger object method definitions */
 static PyMethodDef methods[] = {
     { "spawn", (PyCFunction)spawn, METH_VARARGS, spawn__doc__ },
     { "attach", (PyCFunction)attach, METH_VARARGS, attach__doc__ },
@@ -537,8 +497,6 @@ static PyMethodDef methods[] = {
     { "wait_event", (PyCFunction)wait_event, METH_VARARGS, wait_event__doc__ },
     {NULL}  /* Sentinel */
 };
-
-/* Debugger object field accessors */
 
 static PyObject *
 get_processes(PyBones_DebuggerObject *self, void *closure)

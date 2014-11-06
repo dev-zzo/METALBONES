@@ -7,10 +7,12 @@
     <ClCompile Include="process.c" />
     <ClCompile Include="thread.c" />
     <ClCompile Include="context.c" />
+    <ClCompile Include="module.c" />
+    <ClCompile Include="winternals.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="dbgui.h" />
     <ClInclude Include="bones.h" />
     <ClInclude Include="internal.h" />
+    <ClInclude Include="winternals.h" />
   </ItemGroup>
 </Project>
