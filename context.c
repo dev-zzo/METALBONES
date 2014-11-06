@@ -84,45 +84,45 @@ set_reg(PyBones_ContextObject *self, PyObject *value, int id)
     if (id & REG_LONG32) {
         if (!PyInt_Check(value) && !PyLong_Check(value)) {
             PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
-            return NULL;
+            return -1;
         }
     }
     if (id & REG_LONGDBL) {
         if (!PyFloat_Check(value)) {
             PyErr_SetString(PyExc_TypeError, "Expected an instance of float.");
-            return NULL;
+            return -1;
         }
     }
-
+    return 0;
 }
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
-    { "dr0", (getter)get_reg, (setter)set_reg, "DR0", REG_LONG32 | offsetof(CONTEXT, Dr0) },
-    { "dr1", (getter)get_reg, (setter)set_reg, "DR1", REG_LONG32 | offsetof(CONTEXT, Dr1) },
-    { "dr2", (getter)get_reg, (setter)set_reg, "DR2", REG_LONG32 | offsetof(CONTEXT, Dr2) },
-    { "dr3", (getter)get_reg, (setter)set_reg, "DR3", REG_LONG32 | offsetof(CONTEXT, Dr3) },
-    { "dr6", (getter)get_reg, (setter)set_reg, "DR6", REG_LONG32 | offsetof(CONTEXT, Dr6) },
-    { "dr7", (getter)get_reg, (setter)set_reg, "DR7", REG_LONG32 | offsetof(CONTEXT, Dr7) },
+    { "dr0", (getter)get_reg, (setter)set_reg, "DR0", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr0)) },
+    { "dr1", (getter)get_reg, (setter)set_reg, "DR1", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr1)) },
+    { "dr2", (getter)get_reg, (setter)set_reg, "DR2", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr2)) },
+    { "dr3", (getter)get_reg, (setter)set_reg, "DR3", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr3)) },
+    { "dr6", (getter)get_reg, (setter)set_reg, "DR6", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr6)) },
+    { "dr7", (getter)get_reg, (setter)set_reg, "DR7", (void *)(REG_LONG32 | offsetof(CONTEXT, Dr7)) },
 
-    { "gs", (getter)get_reg, (setter)set_reg, "GS", REG_LONG32 | offsetof(CONTEXT, SegGs) },
-    { "fs", (getter)get_reg, (setter)set_reg, "FS", REG_LONG32 | offsetof(CONTEXT, SegFs) },
-    { "es", (getter)get_reg, (setter)set_reg, "ES", REG_LONG32 | offsetof(CONTEXT, SegEs) },
-    { "ds", (getter)get_reg, (setter)set_reg, "DS", REG_LONG32 | offsetof(CONTEXT, SegDs) },
-    { "cs", (getter)get_reg, (setter)set_reg, "CS", REG_LONG32 | offsetof(CONTEXT, SegCs) },
-    { "ss", (getter)get_reg, (setter)set_reg, "SS", REG_LONG32 | offsetof(CONTEXT, SegSs) },
+    { "gs", (getter)get_reg, (setter)set_reg, "GS", (void *)(REG_LONG32 | offsetof(CONTEXT, SegGs)) },
+    { "fs", (getter)get_reg, (setter)set_reg, "FS", (void *)(REG_LONG32 | offsetof(CONTEXT, SegFs)) },
+    { "es", (getter)get_reg, (setter)set_reg, "ES", (void *)(REG_LONG32 | offsetof(CONTEXT, SegEs)) },
+    { "ds", (getter)get_reg, (setter)set_reg, "DS", (void *)(REG_LONG32 | offsetof(CONTEXT, SegDs)) },
+    { "cs", (getter)get_reg, (setter)set_reg, "CS", (void *)(REG_LONG32 | offsetof(CONTEXT, SegCs)) },
+    { "ss", (getter)get_reg, (setter)set_reg, "SS", (void *)(REG_LONG32 | offsetof(CONTEXT, SegSs)) },
 
-    { "edi", (getter)get_reg, (setter)set_reg, "EDI", REG_LONG32 | offsetof(CONTEXT, Edi) },
-    { "esi", (getter)get_reg, (setter)set_reg, "ESI", REG_LONG32 | offsetof(CONTEXT, Esi) },
-    { "ebx", (getter)get_reg, (setter)set_reg, "EBX", REG_LONG32 | offsetof(CONTEXT, Ebx) },
-    { "ecx", (getter)get_reg, (setter)set_reg, "ECX", REG_LONG32 | offsetof(CONTEXT, Ecx) },
-    { "edx", (getter)get_reg, (setter)set_reg, "EDX", REG_LONG32 | offsetof(CONTEXT, Edx) },
-    { "eax", (getter)get_reg, (setter)set_reg, "EAX", REG_LONG32 | offsetof(CONTEXT, Eax) },
+    { "edi", (getter)get_reg, (setter)set_reg, "EDI", (void *)(REG_LONG32 | offsetof(CONTEXT, Edi)) },
+    { "esi", (getter)get_reg, (setter)set_reg, "ESI", (void *)(REG_LONG32 | offsetof(CONTEXT, Esi)) },
+    { "ebx", (getter)get_reg, (setter)set_reg, "EBX", (void *)(REG_LONG32 | offsetof(CONTEXT, Ebx)) },
+    { "ecx", (getter)get_reg, (setter)set_reg, "ECX", (void *)(REG_LONG32 | offsetof(CONTEXT, Ecx)) },
+    { "edx", (getter)get_reg, (setter)set_reg, "EDX", (void *)(REG_LONG32 | offsetof(CONTEXT, Edx)) },
+    { "eax", (getter)get_reg, (setter)set_reg, "EAX", (void *)(REG_LONG32 | offsetof(CONTEXT, Eax)) },
 
-    { "ebp", (getter)get_reg, (setter)set_reg, "EBP", REG_LONG32 | offsetof(CONTEXT, Ebp) },
-    { "esp", (getter)get_reg, (setter)set_reg, "ESP", REG_LONG32 | offsetof(CONTEXT, Esp) },
-    { "eip", (getter)get_reg, (setter)set_reg, "EIP", REG_LONG32 | offsetof(CONTEXT, Eip) },
-    { "eflags", (getter)get_reg, (setter)set_reg, "EFlags", REG_LONG32 | offsetof(CONTEXT, EFlags) },
+    { "ebp", (getter)get_reg, (setter)set_reg, "EBP", (void *)(REG_LONG32 | offsetof(CONTEXT, Ebp)) },
+    { "esp", (getter)get_reg, (setter)set_reg, "ESP", (void *)(REG_LONG32 | offsetof(CONTEXT, Esp)) },
+    { "eip", (getter)get_reg, (setter)set_reg, "EIP", (void *)(REG_LONG32 | offsetof(CONTEXT, Eip)) },
+    { "eflags", (getter)get_reg, (setter)set_reg, "EFlags", (void *)(REG_LONG32 | offsetof(CONTEXT, EFlags)) },
 
     {NULL}  /* Sentinel */
 };
