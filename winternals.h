@@ -5,6 +5,14 @@
 
 /* Stuff not defined for userland programs */
 
+#ifndef NT_SUCCESS
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+
+#ifndef STATUS_ALERTED
+#define STATUS_ALERTED                   ((NTSTATUS)0x00000101L)
+#endif
+
 typedef LONG KPRIORITY;
 
 typedef struct _CLIENT_ID {
@@ -49,6 +57,10 @@ typedef struct _IO_STATUS_BLOCK {
 } IO_STATUS_BLOCK, *PIO_STATUS_BLOCK;
 
 
+/*
+ * THREADS
+ */
+
 typedef enum _THREAD_INFORMATION_CLASS {          // num/query/set
     ThreadBasicInformation,                       //  0/Y/N
     ThreadTimes,                                  //  1/Y/N
@@ -79,17 +91,16 @@ typedef struct _THREAD_BASIC_INFORMATION {
     KPRIORITY BasePriority;
 } THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
 
-typedef NTSTATUS (NTAPI *PNTQUERYINFORMATIONTHREAD)(
+NTSYSAPI NTSTATUS NTAPI NtQueryInformationThread(
     HANDLE ThreadHandle,
     THREAD_INFORMATION_CLASS ThreadInformationClass,
     PVOID ThreadInformation,
     ULONG ThreadInformationLength,
     PULONG ReturnLength);
 
-extern PNTQUERYINFORMATIONTHREAD NtQueryInformationThread;
 
 /*
- * Process-related stuff.
+ * PROCESSES
  */
 
 typedef struct _LDR_DATA_TABLE_ENTRY_NT513 {
@@ -232,14 +243,17 @@ typedef struct _PROCESS_BASIC_INFORMATION {
     ULONG_PTR InheritedFromUniqueProcessId;
 } PROCESS_BASIC_INFORMATION,*PPROCESS_BASIC_INFORMATION;
 
-typedef NTSTATUS (NTAPI *PNTQUERYINFORMATIONPROCESS)(
+NTSYSAPI NTSTATUS NTAPI ZwQueryInformationProcess(
     HANDLE ProcessHandle,
     PROCESS_INFORMATION_CLASS ProcessInformationClass,
     PVOID ProcessInformation,
     ULONG ProcessInformationLength,
     PULONG ReturnLength);
 
-extern PNTQUERYINFORMATIONPROCESS NtQueryInformationProcess;
+
+/*
+ * VIRTUAL MEMORY
+ */
 
 typedef enum _MEMORY_INFORMATION_CLASS {
     MemoryBasicInformation,
@@ -264,31 +278,27 @@ typedef struct _MEMORY_SECTION_NAME {
     UNICODE_STRING SectionFileName;
 } MEMORY_SECTION_NAME, *PMEMORY_SECTION_NAME;
 
-typedef NTSTATUS (NTAPI *PNTREADVIRTUALMEMORY)(
+NTSYSAPI NTSTATUS NTAPI NtReadVirtualMemory(
     HANDLE ProcessHandle,
     PVOID BaseAddress,
     PVOID Buffer,
     ULONG NumberOfBytesToRead,
     PULONG NumberOfBytesRead);
 
-typedef NTSTATUS (NTAPI *PNTWRITEVIRTUALMEMORY)(
+NTSYSAPI NTSTATUS NTAPI NtWriteVirtualMemory(
     HANDLE ProcessHandle,
     PVOID BaseAddress,
     PVOID Buffer,
     ULONG NumberOfBytesToWrite,
     PULONG NumberOfBytesWritten);
 
-typedef NTSTATUS (NTAPI *PNTQUERYVIRTUALMEMORY)(
+NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(
     HANDLE ProcessHandle,
     PVOID BaseAddress,
     MEMORY_INFORMATION_CLASS MemoryInformationClass,
     PVOID MemoryInformation,
     ULONG MemoryInformationLength,
     PULONG ReturnLength);
-
-extern PNTREADVIRTUALMEMORY NtReadVirtualMemory;
-extern PNTWRITEVIRTUALMEMORY NtWriteVirtualMemory;
-extern PNTQUERYVIRTUALMEMORY NtQueryVirtualMemory;
 
 
 typedef enum _FILE_INFORMATION_CLASS {
@@ -334,25 +344,17 @@ typedef enum _FILE_INFORMATION_CLASS {
     FileOleInformation,
 } FILE_INFORMATION_CLASS, *PFILE_INFORMATION_CLASS;
 
-typedef NTSTATUS (NTAPI *PNTQUERYINFORMATIONFILE)(
+NTSYSAPI NTSTATUS NTAPI NtQueryInformationFile(
     HANDLE FileHandle,
     PIO_STATUS_BLOCK IoStatusBlock,
     PVOID FileInformation,
     ULONG Length,
     FILE_INFORMATION_CLASS FileInformationClass);
 
-extern PNTQUERYINFORMATIONFILE NtQueryInformationFile;
 
-
-#ifndef NT_SUCCESS
-#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
-#endif
-
-#ifndef STATUS_ALERTED
-#define STATUS_ALERTED                   ((NTSTATUS)0x00000101L)
-#endif
-
-/* DbgUI related definitions */
+/*
+ * DEBUGGER
+ */
 
 /* Ref: http://www.openrce.org/articles/full_view/25 */
 /* Ref: http://native-nt-toolkit.googlecode.com/svn/trunk/ndk/dbgktypes.h */
@@ -448,37 +450,29 @@ typedef struct _DBGUI_WAIT_STATE_CHANGE
     } StateInfo;
 } DBGUI_WAIT_STATE_CHANGE, *PDBGUI_WAIT_STATE_CHANGE;
 
-/* Debugging API typedefs */
-
-typedef NTSTATUS (NTAPI *PNTCREATEDEBUGOBJECT)(
+NTSYSAPI NTSTATUS NTAPI NtCreateDebugObject(
     PHANDLE DebugHandle,
     ACCESS_MASK DesiredAccess,
     POBJECT_ATTRIBUTES ObjectAttributes,
     ULONG Flags);
 
-typedef NTSTATUS (NTAPI *PNTDEBUGACTIVEPROCESS)(
+NTSYSAPI NTSTATUS NTAPI NtDebugActiveProcess(
     HANDLE ProcessHandle,
     HANDLE DebugHandle);
 
-typedef NTSTATUS (NTAPI *PNTWAITFORDEBUGEVENT)(
+NTSYSAPI NTSTATUS NTAPI NtWaitForDebugEvent(
     HANDLE DebugHandle,
     BOOLEAN Alertable,
     PLARGE_INTEGER Timeout,
     PDBGUI_WAIT_STATE_CHANGE StateChange);
 
-typedef NTSTATUS (NTAPI *PNTDEBUGCONTINUE)(
+NTSYSAPI NTSTATUS NTAPI NtDebugContinue(
     HANDLE DebugHandle,
     PCLIENT_ID AppClientId,
     NTSTATUS ContinueStatus);
 
-typedef NTSTATUS (NTAPI *PNTREMOVEPROCESSDEBUG)(
+NTSYSAPI NTSTATUS NTAPI NtRemoveProcessDebug(
     HANDLE ProcessHandle,
     HANDLE DebugHandle);
-
-extern PNTCREATEDEBUGOBJECT NtCreateDebugObject;
-extern PNTDEBUGACTIVEPROCESS NtDebugActiveProcess;
-extern PNTWAITFORDEBUGEVENT NtWaitForDebugEvent;
-extern PNTDEBUGCONTINUE NtDebugContinue;
-extern PNTREMOVEPROCESSDEBUG NtRemoveProcessDebug;
 
 #endif // __WINTERNALS_INCLUDED

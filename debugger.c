@@ -80,8 +80,8 @@ spawn(PyBones_DebuggerObject *self, PyObject *args)
     char *cmdline = NULL;
     BOOL cp_result;
     NTSTATUS status;
-    STARTUPINFOA startup_info = { sizeof(STARTUPINFOA), 0, };
-    PROCESS_INFORMATION process_info = { 0, };
+    STARTUPINFOA startup_info = { sizeof(STARTUPINFOA), };
+    PROCESS_INFORMATION process_info;
 
     if (!PyArg_ParseTuple(args, "s", &cmdline)) {
         goto exit0;

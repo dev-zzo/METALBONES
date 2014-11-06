@@ -1,15 +1,6 @@
 #include <Windows.h>
 
-BOOL APIENTRY DllMain(HMODULE module, DWORD reasonForCall, LPVOID reserved)
+BOOL WINAPI _DllMainCRTStartup(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
-	switch (reasonForCall)
-	{
-	case DLL_PROCESS_ATTACH:
-	case DLL_THREAD_ATTACH:
-	case DLL_THREAD_DETACH:
-	case DLL_PROCESS_DETACH:
-		break;
-	}
-	return TRUE;
+    return TRUE;
 }
-

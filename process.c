@@ -81,7 +81,7 @@ init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
         return -1;
     }
 
-    status = NtQueryInformationProcess(
+    status = ZwQueryInformationProcess(
         self->handle,
         ProcessBasicInformation,
         &pbi,
@@ -191,7 +191,7 @@ PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
         WCHAR __space[0x210];
     } buffer;
 
-    status = NtQueryVirtualMemory(
+    status = ZwQueryVirtualMemory(
         _self->handle,
         address,
         MemorySectionName,

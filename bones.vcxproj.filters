@@ -8,7 +8,6 @@
     <ClCompile Include="thread.c" />
     <ClCompile Include="context.c" />
     <ClCompile Include="module.c" />
-    <ClCompile Include="winternals.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bones.h" />

@@ -8,9 +8,6 @@ PyObject *PyBones_Win32Error;
 /* NT status exception */
 PyObject *PyBones_NtStatusError;
 
-int
-init_ntdll_pointers(void);
-
 /* Module method definitions */
 static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
@@ -38,8 +35,6 @@ initbones(void)
 {
     PyObject* m;
     int rv;
-
-    init_ntdll_pointers();
 
     m = Py_InitModule3(
         "bones",

@@ -62,8 +62,6 @@ init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *tmp;
     PyObject *process = NULL;
-    HANDLE process_handle;
-    PyObject *path;
 
     /* base_address, handle, process */
     if (!PyArg_ParseTuple(args, "kO",
