@@ -127,11 +127,11 @@ _PyBones_Process_AddThread(PyObject *self, PyObject *thread_id, PyObject *thread
     return PyDict_SetItem(_self->threads, thread_id, thread);
 }
 
-int
-_PyBones_Process_AddModule(PyObject *self, PyObject *base_address, PyObject *module)
+PyObject *
+_PyBones_Process_GetThread(PyObject *self, PyObject *thread_id)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return PyDict_SetItem(_self->modules, base_address, module);
+    return PyDict_GetItem(_self->threads, thread_id);
 }
 
 PyObject *
@@ -139,6 +139,13 @@ _PyBones_Process_DelThread(PyObject *self, PyObject *thread_id)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     return remove_kv(_self->threads, thread_id);
+}
+
+int
+_PyBones_Process_AddModule(PyObject *self, PyObject *base_address, PyObject *module)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    return PyDict_SetItem(_self->modules, base_address, module);
 }
 
 PyObject *

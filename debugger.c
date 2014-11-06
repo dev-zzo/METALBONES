@@ -283,9 +283,11 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     DWORD pid = (DWORD)info->AppClientId.UniqueProcess;
     DWORD tid = (DWORD)info->AppClientId.UniqueThread;
     int result = -1;
+    NTSTATUS continue_status = DBG_CONTINUE;
     PyObject *arglist;
     PyObject *process_id = NULL, *thread_id = NULL;
     PyObject *process, *thread, *module;
+    PyObject *base_addr;
 
     process_id = PyInt_FromLong(pid);
     if (!process_id)
@@ -298,13 +300,11 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     case DbgIdle:
         /* No idea how to handle these. */
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgIdle.\n", pid, tid);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgReplyPending:
         /* No idea how to handle these. */
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgReplyPending.\n", pid, tid);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgCreateProcessStateChange:
@@ -344,136 +344,126 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
                 Py_DECREF(process);
             }
         }
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgExitProcessStateChange:
         /* DEBUG_PRINT("BONES: [%d] Process exited.\n", pid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        if (process) {
-            _PyBones_Process_SetExitStatus(process, info->StateInfo.ExitProcess.ExitStatus);
-            result = do_event_callback((PyObject *)self, "on_process_exit", process);
-            if (result >= 0) {
-                PyDict_DelItem(self->processes, process_id);
-            }
+        if (!process)
+            goto fail_unknown_process;
+        _PyBones_Process_SetExitStatus(process, info->StateInfo.ExitProcess.ExitStatus);
+        result = do_event_callback((PyObject *)self, "on_process_exit", process);
+        if (result >= 0) {
+            PyDict_DelItem(self->processes, process_id);
         }
-        else {
-            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
-        }
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgCreateThreadStateChange:
         /* DEBUG_PRINT("BONES: [%d/%d] Thread created.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        if (process) {
-            result = handle_create_thread(
-                self,
-                thread_id,
-                info->StateInfo.CreateThread.HandleToThread,
-                process,
-                info->StateInfo.CreateThread.NewThread.StartAddress);
-        }
-        else {
-            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
-        }
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
+        if (!process)
+            goto fail_unknown_process;
+        result = handle_create_thread(
+            self,
+            thread_id,
+            info->StateInfo.CreateThread.HandleToThread,
+            process,
+            info->StateInfo.CreateThread.NewThread.StartAddress);
         break;
 
     case DbgExitThreadStateChange:
         /* DEBUG_PRINT("BONES: [%d/%d] Thread exited.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        if (process) {
-            thread = _PyBones_Process_DelThread(process, thread_id);
-            if (thread) {
-                if (thread != Py_None) {
-                    _PyBones_Thread_SetExitStatus(thread, info->StateInfo.ExitThread.ExitStatus);
-                    result = do_event_callback((PyObject *)self, "on_thread_exit", thread);
-                    Py_DECREF(thread);
-                }
-                else {
-                    DEBUG_PRINT("BONES: [%d/%d] No such thread in the process being debugged.\n", pid, tid);
-                }
-            }
+        if (!process)
+            goto fail_unknown_process;
+        thread = _PyBones_Process_DelThread(process, thread_id);
+        if (thread) {
+            if (thread == Py_None)
+                goto fail_unknown_thread;
+            _PyBones_Thread_SetExitStatus(thread, info->StateInfo.ExitThread.ExitStatus);
+            result = do_event_callback((PyObject *)self, "on_thread_exit", thread);
+            Py_DECREF(thread);
         }
-        else {
-            /* No such process? */
-            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
-        }
-
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgExceptionStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgExceptionStateChange.\n", pid, tid);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
+        process = PyDict_GetItem(self->processes, process_id);
+        if (!process)
+            goto fail_unknown_process;
+        /* Borrowed. */
+        thread = _PyBones_Process_GetThread(process, thread_id);
+        if (!thread)
+            goto fail_unknown_thread;
+        /* Do something. */
+        result = 0;
+        /* FIXME: this is the only event where passing DBG_CONTINUE is wrong? */
         break;
 
     case DbgBreakpointStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_EXCEPTION_HANDLED);
+        if (!process)
+            goto fail_unknown_process;
+        /* Borrowed. */
+        thread = _PyBones_Process_GetThread(process, thread_id);
+        if (!thread)
+            goto fail_unknown_thread;
+        /* Do something. */
+        result = 0;
+        continue_status = DBG_EXCEPTION_HANDLED;
         break;
 
     case DbgSingleStepStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
-        result = continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
+        process = PyDict_GetItem(self->processes, process_id);
+        if (!process)
+            goto fail_unknown_process;
+        /* Borrowed. */
+        thread = _PyBones_Process_GetThread(process, thread_id);
+        if (!thread)
+            goto fail_unknown_thread;
+        /* Do something. */
+        result = 0;
         break;
 
     case DbgLoadDllStateChange:
         /* DEBUG_PRINT("BONES: [%d/%d] Caught DbgLoadDllStateChange.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        if (process) {
-            PyObject *base_addr;
-
-            base_addr = PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.LoadDll.BaseOfDll);
-            if (base_addr) {
-                result = handle_load_module(
-                    self,
-                    base_addr,
-                    process);
-                Py_DECREF(base_addr);
-            }
+        if (!process)
+            goto fail_unknown_process;
+        base_addr = PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.LoadDll.BaseOfDll);
+        if (base_addr) {
+            result = handle_load_module(
+                self,
+                base_addr,
+                process);
+            Py_DECREF(base_addr);
         }
-        else {
-            /* No such process? */
-            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
-        }
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     case DbgUnloadDllStateChange:
-        DEBUG_PRINT("BONES: [%d/%d] Caught DbgUnloadDllStateChange.\n", pid, tid);
+        /* DEBUG_PRINT("BONES: [%d/%d] Caught DbgUnloadDllStateChange.\n", pid, tid); */
         /* Borrowed. */
         process = PyDict_GetItem(self->processes, process_id);
-        if (process) {
-            PyObject *base_addr;
-
-            base_addr = PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.UnloadDll.BaseOfDll);
-            if (base_addr) {
-                module = _PyBones_Process_DelModule(process, base_addr);
-                if (module) {
-                    if (module != Py_None) {
-                        result = do_event_callback((PyObject *)self, "on_module_unload", module);
-                        Py_DECREF(module);
-                    }
-                    else {
-                        /* No such module. */
-                    }
-                }
-                Py_DECREF(base_addr);
+        if (!process)
+            goto fail_unknown_process;
+        base_addr = PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.UnloadDll.BaseOfDll);
+        if (base_addr) {
+            module = _PyBones_Process_DelModule(process, base_addr);
+            if (module) {
+                if (module == Py_None)
+                    goto fail_unknown_module;
+                result = do_event_callback((PyObject *)self, "on_module_unload", module);
+                Py_DECREF(module);
             }
+            Py_DECREF(base_addr);
         }
-        else {
-            /* No such process? */
-            DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
-        }
-        continue_event(self->dbgui_object, &info->AppClientId, DBG_CONTINUE);
         break;
 
     default:
@@ -481,12 +471,31 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
     }
 
+cont_event:
+    /* FIXME: handle continue_event's failure properly! */
+    continue_event(self->dbgui_object, &info->AppClientId, continue_status);
+
 exit2:
     Py_DECREF(process_id);
 exit1:
     Py_DECREF(thread_id);
 exit0:
     return result;
+
+fail_unknown_process:
+    /* Raise an exception? */
+    DEBUG_PRINT("BONES: [%d/%d] No such process is being debugged.\n", pid, tid);
+    goto cont_event;
+
+fail_unknown_thread:
+    /* Raise an exception? */
+    DEBUG_PRINT("BONES: [%d/%d] No such thread in the process being debugged.\n", pid, tid);
+    goto cont_event;
+
+fail_unknown_module:
+    /* Raise an exception? */
+    DEBUG_PRINT("BONES: [%d/%d] No such module in the process being debugged.\n", pid, tid);
+    goto cont_event;
 }
 
 PyDoc_STRVAR(wait_event__doc__,
