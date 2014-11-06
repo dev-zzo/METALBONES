@@ -420,7 +420,7 @@ typedef struct _DBGKM_LOAD_DLL
 
 typedef struct _DBGKM_UNLOAD_DLL
 {
-    PVOID BaseAddress;
+    PVOID BaseOfDll;
 } DBGKM_UNLOAD_DLL, *PDBGKM_UNLOAD_DLL;
 
 typedef struct _DBGUI_WAIT_STATE_CHANGE

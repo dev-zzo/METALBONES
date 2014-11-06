@@ -11,7 +11,6 @@ typedef struct {
     PyObject_HEAD
 
     PVOID base_address; /* Base address of the module */
-    HANDLE handle; /* Module file handle */
     PyObject *process; /* The process where this module is mapped to */
     PyObject *name; /* Human-friendly name of the module, if one exists */
     PyObject *path; /* Full path to the module */
@@ -40,7 +39,6 @@ static void
 dealloc(PyBones_ModuleObject *self)
 {
     clear(self);
-    CloseHandle(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -68,9 +66,8 @@ init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
     PyObject *path;
 
     /* base_address, handle, process */
-    if (!PyArg_ParseTuple(args, "kkO",
+    if (!PyArg_ParseTuple(args, "kO",
         &self->base_address,
-        &self->handle,
         &process)) {
         return -1;
     }
