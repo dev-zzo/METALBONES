@@ -9,16 +9,25 @@ class TestDebugger(bones.Debugger):
         self.p = None
     
     def on_process_create(self, p):
-        print "Process created!"
+        print "[%05d] Process created." % (p.id)
         self.p = p
+        
     def on_thread_create(self, t):
-        print "Thread created!"
+        print "[%05d/%05d] Thread created." % (t.process.id, t.id)
+        print "Thread context:"
+        print str(t.context)
+        
     def on_thread_exit(self, t):
-        print "Thread exited!"
+        print "[%05d/%05d] Thread exited, status %08x." % (t.process.id, t.id, t.exit_status)
+        
     def on_process_exit(self, p):
-        print "Process exited!"
+        print "[%05d] Process exited, status %08x." % (p.id, p.exit_status)
         self.p = None
         self.done = True
+        
+    def on_module_load(self, m):
+        print "[%05d] Module loaded at %08x: %s." % (m.process.id, m.base_address, m.path)
+#
 
 d = TestDebugger()
 
@@ -29,4 +38,4 @@ while not d.done:
         print "timed out"
         d.idle_count += 1
         if d.idle_count >= 5 and not d.killing:
-            d.p.terminate(1)
+            d.p.terminate(0xDEADBEEF)
