@@ -5,6 +5,8 @@
 *.lib
 *.dll
 *.exe
+*.pyd
+*.pdb
 
 # MSVS crap
 *.suo
