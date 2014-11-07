@@ -62,60 +62,6 @@ NTSYSAPI NTSTATUS NTAPI NtClose(
 
 
 /*
- * THREADS
- */
-
-typedef enum _THREAD_INFORMATION_CLASS {          // num/query/set
-    ThreadBasicInformation,                       //  0/Y/N
-    ThreadTimes,                                  //  1/Y/N
-    ThreadPriority,                               //  2/N/Y
-    ThreadBasePriority,                           //  3/N/Y
-    ThreadAffinityMask,                           //  4/N/Y
-    ThreadImpersonationToken,                     //  5/N/Y
-    ThreadDescriptorTableEntry,                   //  6/Y/N
-    ThreadEnableAlignmentFaultFixup,              //  7/N/Y
-    ThreadEventPair,                              //  8/N/Y
-    ThreadQuerySetWin32StartAddress,              //  9/Y/Y
-    ThreadZeroTlsCell,                            // 10/N/Y
-    ThreadPerformanceCount,                       // 11/Y/N
-    ThreadAmILastThread,                          // 12/Y/N
-    ThreadIdealProcessor,                         // 13/N/Y
-    ThreadPriorityBoost,                          // 14/Y/Y
-    ThreadSetTlsArrayAddress,                     // 15/N/Y
-    ThreadIsIoPending,                            // 16/Y/N
-    ThreadHideFromDebugger                        // 17/N/Y
-} THREAD_INFORMATION_CLASS, *PTHREAD_INFORMATION_CLASS;
-
-typedef struct _THREAD_BASIC_INFORMATION {
-    NTSTATUS ExitStatus;
-    PVOID TebBaseAddress;
-    CLIENT_ID ClientId;
-    KAFFINITY AffinityMask;
-    KPRIORITY Priority;
-    KPRIORITY BasePriority;
-} THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
-
-NTSYSAPI NTSTATUS NTAPI NtQueryInformationThread(
-    HANDLE ThreadHandle,
-    THREAD_INFORMATION_CLASS ThreadInformationClass,
-    PVOID ThreadInformation,
-    ULONG ThreadInformationLength,
-    PULONG ReturnLength);
-
-NTSYSAPI NTSTATUS NTAPI NtGetContextThread(
-    HANDLE ThreadHandle,
-    PCONTEXT pContext);
-
-NTSYSAPI NTSTATUS NTAPI NtSetContextThread(
-    HANDLE ThreadHandle,
-    PCONTEXT pContext);
-
-NTSYSAPI NTSTATUS NTAPI NtResumeThread(
-    HANDLE ThreadHandle,
-    PULONG SuspendCount);
-
-
-/*
  * PROCESSES
  */
 
@@ -269,6 +215,175 @@ NTSYSAPI NTSTATUS NTAPI NtQueryInformationProcess(
 NTSYSAPI NTSTATUS NTAPI NtTerminateProcess(
     HANDLE ProcessHandle,
     NTSTATUS ExitStatus);
+
+
+/*
+ * THREADS
+ */
+
+typedef struct _ACTIVATION_CONTEXT_STACK {
+    ULONG Flags;
+    ULONG NextCookieSequenceNumber;
+    PVOID ActiveFrame;
+    LIST_ENTRY FrameListCache;
+} ACTIVATION_CONTEXT_STACK, *PACTIVATION_CONTEXT_STACK;
+
+typedef struct _GDI_TEB_BATCH {
+    ULONG Offset;
+    ULONG HDC;
+    ULONG Buffer[310];
+} GDI_TEB_BATCH, *PGDI_TEB_BATCH;
+
+typedef struct _TEB_ACTIVE_FRAME_CONTEXT {
+    ULONG Flags;
+    PVOID FrameName;
+} TEB_ACTIVE_FRAME_CONTEXT, *PTEB_ACTIVE_FRAME_CONTEXT;
+
+typedef struct _TEB_ACTIVE_FRAME {
+    ULONG Flags;
+    struct _TEB_ACTIVE_FRAME *Previous;
+    TEB_ACTIVE_FRAME_CONTEXT *Context;
+} TEB_ACTIVE_FRAME, *PTEB_ACTIVE_FRAME;
+
+/* Defined in winnt.h
+typedef struct _NT_TIB {
+    EXCEPTION_REGISTRATION_RECORD *ExceptionList;
+    PVOID StackBase;
+    PVOID StackLimit;
+    PVOID SubSystemTib;
+    union {
+        PVOID FiberData;
+        ULONG Version;
+    };
+    PVOID ArbitraryUserPointer;
+    _NT_TIB *Self;
+} NT_TIB, *PNT_TIB;
+*/
+
+typedef struct __declspec(align(4)) _Wx86ThreadState {
+    PUINT CallBx86Eip;
+    PVOID DeallocationCpu;
+    BOOLEAN UseKnownWx86Dll;
+    BOOLEAN OleStubInvoked;
+} Wx86ThreadState;
+
+typedef struct _TEB_NT513 {
+    NT_TIB NtTib;
+    PVOID EnvironmentPointer;
+    CLIENT_ID ClientId;
+    PVOID ActiveRpcHandle;
+    PVOID ThreadLocalStoragePointer;
+    PPEB_NT513 ProcessEnvironmentBlock;
+    ULONG LastErrorValue;
+    ULONG CountOfOwnedCriticalSections;
+    PVOID CsrClientThread;
+    PVOID Win32ThreadInfo;
+    ULONG User32Reserved[26];
+    ULONG UserReserved[5];
+    PVOID WOW32Reserved;
+    ULONG CurrentLocale;
+    ULONG FpSoftwareStatusRegister;
+    PVOID SystemReserved1[54];
+    UINT ExceptionCode;
+    ACTIVATION_CONTEXT_STACK ActivationContextStack;
+    BYTE SpareBytes1[24];
+    GDI_TEB_BATCH GdiTebBatch;
+    CLIENT_ID RealClientId;
+    PVOID GdiCachedProcessHandle;
+    ULONG GdiClientPID;
+    ULONG GdiClientTID;
+    PVOID GdiThreadLocalInfo;
+    ULONG Win32ClientInfo[62];
+    PVOID glDispatchTable[233];
+    ULONG glReserved1[29];
+    PVOID glReserved2;
+    PVOID glSectionInfo;
+    PVOID glSection;
+    PVOID glTable;
+    PVOID glCurrentRC;
+    PVOID glContext;
+    ULONG LastStatusValue;
+    UNICODE_STRING StaticUnicodeString;
+    USHORT StaticUnicodeBuffer[261];
+    PVOID DeallocationStack;
+    PVOID TlsSlots[64];
+    LIST_ENTRY TlsLinks;
+    PVOID Vdm;
+    PVOID ReservedForNtRpc;
+    PVOID DbgSsReserved[2];
+    ULONG HardErrorsAreDisabled;
+    PVOID Instrumentation[16];
+    PVOID WinSockData;
+    ULONG GdiBatchCount;
+    BOOLEAN InDbgPrint;
+    BOOLEAN FreeStackOnTermination;
+    BOOLEAN HasFiberData;
+    BYTE IdealProcessor;
+    ULONG Spare3;
+    PVOID ReservedForPerf;
+    PVOID ReservedForOle;
+    ULONG WaitingOnLoaderLock;
+    Wx86ThreadState Wx86Thread;
+    PVOID *TlsExpansionSlots;
+    ULONG ImpersonationLocale;
+    ULONG IsImpersonating;
+    PVOID NlsCache;
+    PVOID pShimData;
+    ULONG HeapVirtualAffinity;
+    PVOID CurrentTransactionHandle;
+    PTEB_ACTIVE_FRAME ActiveFrame;
+    BOOLEAN SafeThunkCall;
+    BOOLEAN BooleanSpare[3];
+} TEB_NT513, *PTEB_NT513;
+
+typedef enum _THREAD_INFORMATION_CLASS {          // num/query/set
+    ThreadBasicInformation,                       //  0/Y/N
+    ThreadTimes,                                  //  1/Y/N
+    ThreadPriority,                               //  2/N/Y
+    ThreadBasePriority,                           //  3/N/Y
+    ThreadAffinityMask,                           //  4/N/Y
+    ThreadImpersonationToken,                     //  5/N/Y
+    ThreadDescriptorTableEntry,                   //  6/Y/N
+    ThreadEnableAlignmentFaultFixup,              //  7/N/Y
+    ThreadEventPair,                              //  8/N/Y
+    ThreadQuerySetWin32StartAddress,              //  9/Y/Y
+    ThreadZeroTlsCell,                            // 10/N/Y
+    ThreadPerformanceCount,                       // 11/Y/N
+    ThreadAmILastThread,                          // 12/Y/N
+    ThreadIdealProcessor,                         // 13/N/Y
+    ThreadPriorityBoost,                          // 14/Y/Y
+    ThreadSetTlsArrayAddress,                     // 15/N/Y
+    ThreadIsIoPending,                            // 16/Y/N
+    ThreadHideFromDebugger                        // 17/N/Y
+} THREAD_INFORMATION_CLASS, *PTHREAD_INFORMATION_CLASS;
+
+typedef struct _THREAD_BASIC_INFORMATION {
+    NTSTATUS ExitStatus;
+    PVOID TebBaseAddress;
+    CLIENT_ID ClientId;
+    KAFFINITY AffinityMask;
+    KPRIORITY Priority;
+    KPRIORITY BasePriority;
+} THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
+
+NTSYSAPI NTSTATUS NTAPI NtQueryInformationThread(
+    HANDLE ThreadHandle,
+    THREAD_INFORMATION_CLASS ThreadInformationClass,
+    PVOID ThreadInformation,
+    ULONG ThreadInformationLength,
+    PULONG ReturnLength);
+
+NTSYSAPI NTSTATUS NTAPI NtGetContextThread(
+    HANDLE ThreadHandle,
+    PCONTEXT pContext);
+
+NTSYSAPI NTSTATUS NTAPI NtSetContextThread(
+    HANDLE ThreadHandle,
+    PCONTEXT pContext);
+
+NTSYSAPI NTSTATUS NTAPI NtResumeThread(
+    HANDLE ThreadHandle,
+    PULONG SuspendCount);
 
 
 /*
