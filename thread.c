@@ -98,7 +98,7 @@ init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
         sizeof(tbi),
         NULL);
     if (!NT_SUCCESS(status)) {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        PyBones_RaiseNtStatusError(status);
         Py_DECREF(self);
         return -1;
     }
@@ -149,11 +149,25 @@ get_exit_status(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
-void
-_PyBones_Thread_SetExitStatus(PyObject *self, unsigned int status)
+static int
+set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
-    PyBones_ThreadObject *_self = (PyBones_ThreadObject *)self;
-    _self->exit_status = status;
+    if (!value) {
+        PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
+        return -1;
+    }
+
+    if (PyInt_CheckExact(value)) {
+        self->exit_status = (NTSTATUS)PyInt_AsLong(value);
+        return 0;
+    }
+    if (PyLong_CheckExact(value)) {
+        self->exit_status = (NTSTATUS)PyLong_AsUnsignedLong(value);
+        return 0;
+    }
+
+    PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
+    return -1;
 }
 
 static PyObject *
@@ -176,7 +190,7 @@ static int
 set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
-        PyErr_SetString(PyExc_TypeError, "Context cannot be deleted.");
+        PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
         return -1;
     }
 
@@ -193,7 +207,8 @@ static PyGetSetDef getseters[] = {
     { "id", (getter)get_id, NULL, "Unique thread ID", NULL },
     { "process", (getter)get_process, NULL, "Owning process", NULL },
     { "start_address", (getter)get_start_address, NULL, "Thread starting address", NULL },
-    { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the thread exits", NULL },
+    { "teb_address", (getter)get_teb_address, NULL, "Thread Environment Block address", NULL },
+    { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the thread exits", NULL },
     { "context", (getter)get_context, (setter)set_context, "Thread's CPU context", NULL },
     {NULL}  /* Sentinel */
 };
@@ -203,7 +218,7 @@ static PyGetSetDef getseters[] = {
 PyTypeObject PyBones_Thread_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
-    "bones.Thread",  /*tp_name*/
+    "_bones.Thread",  /*tp_name*/
     sizeof(PyBones_ThreadObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
     (destructor)dealloc,  /*tp_dealloc*/
@@ -221,7 +236,7 @@ PyTypeObject PyBones_Thread_Type = {
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,  /*tp_flags*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Thread object",  /*tp_doc*/
     (traverseproc)traverse,  /* tp_traverse */
     (inquiry)clear,  /* tp_clear */

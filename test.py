@@ -9,13 +9,14 @@ class TestDebugger(bones.Debugger):
         self.p = None
     
     def on_process_create(self, p):
-        print "[%05d] Process created." % (p.id)
+        print "[%05d] Process created!!!" % (p.id)
         self.p = p
         
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)
         print "Thread context:"
         print str(t.context)
+        print "TEB at %08x" % t.teb_address
         
     def on_thread_exit(self, t):
         print "[%05d/%05d] Thread exited, status %08x." % (t.process.id, t.id, t.exit_status)

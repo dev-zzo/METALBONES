@@ -88,13 +88,12 @@ init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
         sizeof(pbi),
         NULL);
     if (!NT_SUCCESS(status)) {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        PyBones_RaiseNtStatusError(status);
         Py_DECREF(self);
         return -1;
     }
 
     self->peb_address = pbi.PebBaseAddress;
-    DEBUG_PRINT("BONES: peb = %08x\n", self->peb_address);
 
     return 0;
 }
@@ -118,41 +117,6 @@ remove_kv(PyObject *dict, PyObject *key)
         value = Py_None;
     }
     return value;
-}
-
-int
-_PyBones_Process_AddThread(PyObject *self, PyObject *thread_id, PyObject *thread)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return PyDict_SetItem(_self->threads, thread_id, thread);
-}
-
-PyObject *
-_PyBones_Process_GetThread(PyObject *self, PyObject *thread_id)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return PyDict_GetItem(_self->threads, thread_id);
-}
-
-PyObject *
-_PyBones_Process_DelThread(PyObject *self, PyObject *thread_id)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return remove_kv(_self->threads, thread_id);
-}
-
-int
-_PyBones_Process_AddModule(PyObject *self, PyObject *base_address, PyObject *module)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return PyDict_SetItem(_self->modules, base_address, module);
-}
-
-PyObject *
-_PyBones_Process_DelModule(PyObject *self, PyObject *base_address)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    return remove_kv(_self->modules, base_address);
 }
 
 HANDLE
@@ -183,7 +147,7 @@ PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void
         size,
         &read);
     if (!NT_SUCCESS(status)) {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        PyBones_RaiseNtStatusError(status);
     }
     return read;
 }
@@ -206,7 +170,7 @@ PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
         sizeof(buffer),
         NULL);
     if (!NT_SUCCESS(status)) {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        PyBones_RaiseNtStatusError(status);
         return NULL;
     }
 
@@ -234,7 +198,7 @@ PyBones_Process_Terminate(PyObject *self, PyObject *args)
 
     status = NtTerminateProcess(_self->handle, exit_code);
     if (!NT_SUCCESS(status)) {
-        PyErr_SetObject(PyBones_NtStatusError, PyLong_FromUnsignedLong(status));
+        PyBones_RaiseNtStatusError(status);
         return NULL;
     }
 
@@ -267,30 +231,46 @@ get_exit_status(PyBones_ProcessObject *self, void *closure)
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
-void
-_PyBones_Process_SetExitStatus(PyObject *self, unsigned int status)
+static int
+set_exit_status(PyBones_ProcessObject *self, PyObject *value, void *closure)
 {
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    _self->exit_status = status;
+    if (!value) {
+        PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
+        return -1;
+    }
+
+    if (PyInt_CheckExact(value)) {
+        self->exit_status = (NTSTATUS)PyInt_AsLong(value);
+        return 0;
+    }
+    if (PyLong_CheckExact(value)) {
+        self->exit_status = (NTSTATUS)PyLong_AsUnsignedLong(value);
+        return 0;
+    }
+
+    PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
+    return -1;
 }
 
 static PyObject *
 get_threads(PyBones_ProcessObject *self, void *closure)
 {
-    return PyDictProxy_New(self->threads);
+    Py_INCREF(self->threads);
+    return self->threads;
 }
 
 static PyObject *
 get_modules(PyBones_ProcessObject *self, void *closure)
 {
-    return PyDictProxy_New(self->modules);
+    Py_INCREF(self->modules);
+    return self->modules;
 }
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique process ID", NULL },
     { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
-    { "exit_status", (getter)get_exit_status, NULL, "Exit status -- set when the process exits", NULL },
+    { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the process exits", NULL },
     { "threads", (getter)get_threads, NULL, "Threads running within the process", NULL },
     { "modules", (getter)get_modules, NULL, "Modules mapped within the process", NULL },
     {NULL}  /* Sentinel */
@@ -301,7 +281,7 @@ static PyGetSetDef getseters[] = {
 PyTypeObject PyBones_Process_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
-    "bones.Process",  /*tp_name*/
+    "_bones.Process",  /*tp_name*/
     sizeof(PyBones_ProcessObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
     (destructor)dealloc,  /*tp_dealloc*/
@@ -319,7 +299,7 @@ PyTypeObject PyBones_Process_Type = {
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,  /*tp_flags*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Process object",  /*tp_doc*/
     (traverseproc)traverse,  /* tp_traverse */
     (inquiry)clear,  /* tp_clear */

@@ -9,14 +9,10 @@ _PyBones_Process_GetHandle(PyObject *self);
 
 typedef struct {
     PyObject_HEAD
-
     PVOID base_address; /* Base address of the module */
     PyObject *process; /* The process where this module is mapped to */
     PyObject *name; /* Human-friendly name of the module, if one exists */
     PyObject *path; /* Full path to the module */
-
-    PVOID ldr_entry_address; /* Keep the address of LDR entry */
-
 } PyBones_ModuleObject;
 
 static int
@@ -63,7 +59,7 @@ init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
     PyObject *tmp;
     PyObject *process = NULL;
 
-    /* base_address, handle, process */
+    /* base_address, process */
     if (!PyArg_ParseTuple(args, "kO",
         &self->base_address,
         &process)) {
@@ -131,7 +127,7 @@ static PyGetSetDef getseters[] = {
 PyTypeObject PyBones_Module_Type = {
     PyObject_HEAD_INIT(NULL)
     0,  /*ob_size*/
-    "bones.Module",  /*tp_name*/
+    "_bones.Module",  /*tp_name*/
     sizeof(PyBones_ModuleObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
     (destructor)dealloc,  /*tp_dealloc*/
@@ -149,7 +145,7 @@ PyTypeObject PyBones_Module_Type = {
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC,  /*tp_flags*/
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Module object",  /*tp_doc*/
     (traverseproc)traverse,  /* tp_traverse */
     (inquiry)clear,  /* tp_clear */
