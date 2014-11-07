@@ -5,6 +5,7 @@
 *.lib
 *.dll
 *.exe
+*.pyc
 *.pyd
 *.pdb
 
