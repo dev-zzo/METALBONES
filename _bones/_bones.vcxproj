@@ -30,7 +30,7 @@
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.pyd</TargetExt>
     <GenerateManifest>false</GenerateManifest>
-    <OutDir>$(SolutionDir)\</OutDir>
+    <OutDir>$(SolutionDir)build\</OutDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -56,12 +56,11 @@
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>del $(OutDir)\$(ProjectName).lib
-del $(OutDir)\$(ProjectName).exp</Command>
+      <Command>
+      </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="bones.c" />
     <ClCompile Include="context.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="dllmain.c" />
@@ -69,11 +68,12 @@ del $(OutDir)\$(ProjectName).exp</Command>
     <ClCompile Include="module.c" />
     <ClCompile Include="process.c" />
     <ClCompile Include="thread.c" />
+    <ClCompile Include="_bones.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="winternals.h" />
-    <ClInclude Include="bones.h" />
     <ClInclude Include="internal.h" />
+    <ClInclude Include="_bones.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

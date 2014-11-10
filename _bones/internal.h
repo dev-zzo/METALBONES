@@ -3,7 +3,7 @@
 
 /* http://legacy.python.org/dev/peps/pep-0007/ */
 
-#include "bones.h"
+#include "_bones.h"
 
 #if 1
 #define DEBUG_PRINT PySys_WriteStderr
