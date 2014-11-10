@@ -71,3 +71,13 @@ class Debugger(_bones.Debugger):
         except AttributeError:
             pass
         del self.processes[pid]
+
+    def _on_exception(self, pid, tid, info, first_chance):
+        process = self.processes[pid]
+        thread = process.threads[tid]
+        try:
+            self.on_exception(thread, info, first_chance)
+        except AttributeError:
+            pass
+        pass
+#

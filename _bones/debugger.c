@@ -244,6 +244,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
             _PyBones_ExceptionInfo_Translate(&info->StateInfo.Exception.ExceptionRecord),
             PyBool_FromLong(info->StateInfo.Exception.FirstChance));
         /* FIXME: this is the only event where passing DBG_CONTINUE is wrong? */
+        continue_status = DBG_EXCEPTION_NOT_HANDLED;
         break;
 
     case DbgBreakpointStateChange:
