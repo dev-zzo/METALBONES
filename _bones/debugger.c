@@ -178,14 +178,6 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     NTSTATUS status;
     NTSTATUS continue_status = DBG_CONTINUE;
     PyObject *cb_result = NULL;
-    PyObject *process_id = NULL, *thread_id = NULL;
-
-    process_id = PyInt_FromLong(pid);
-    if (!process_id)
-        goto exit0;
-    thread_id = PyInt_FromLong(tid);
-    if (!thread_id)
-        goto exit1;
 
     switch (info->NewState) {
     case DbgIdle:
@@ -215,40 +207,40 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
             }
         }
 
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "OkOkkk",
-            process_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "kkkkkk",
+            info->AppClientId.UniqueProcess,
             info->StateInfo.CreateProcessInfo.HandleToProcess,
-            thread_id,
+            info->AppClientId.UniqueThread,
             info->StateInfo.CreateProcessInfo.HandleToThread,
             info->StateInfo.CreateProcessInfo.NewProcess.BaseOfImage,
             info->StateInfo.CreateProcessInfo.NewProcess.InitialThread.StartAddress);
         break;
 
     case DbgExitProcessStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "Ok",
-            process_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "kk",
+            info->AppClientId.UniqueProcess,
             info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgCreateThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "OOkk",
-            process_id,
-            thread_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "kkkk",
+            info->AppClientId.UniqueProcess,
+            info->AppClientId.UniqueThread,
             info->StateInfo.CreateThread.HandleToThread,
             info->StateInfo.CreateThread.NewThread.StartAddress);
         break;
 
     case DbgExitThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "OOk",
-            process_id,
-            thread_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "kkk",
+            info->AppClientId.UniqueProcess,
+            info->AppClientId.UniqueThread,
             info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgExceptionStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_exception", "OONN",
-            process_id,
-            thread_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_exception", "kkNN",
+            info->AppClientId.UniqueProcess,
+            info->AppClientId.UniqueThread,
             _PyBones_ExceptionInfo_Translate(&info->StateInfo.Exception.ExceptionRecord),
             PyBool_FromLong(info->StateInfo.Exception.FirstChance));
         /* FIXME: this is the only event where passing DBG_CONTINUE is wrong? */
@@ -266,14 +258,14 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgLoadDllStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "Ok",
-            process_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "kk",
+            info->AppClientId.UniqueProcess,
             info->StateInfo.LoadDll.BaseOfDll);
         break;
 
     case DbgUnloadDllStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "Ok",
-            process_id,
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "kk",
+            info->AppClientId.UniqueProcess,
             info->StateInfo.UnloadDll.BaseOfDll);
         break;
 
@@ -293,10 +285,6 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         result = -1;
     }
 
-    Py_DECREF(process_id);
-exit1:
-    Py_DECREF(thread_id);
-exit0:
     return result;
 }
 
@@ -345,25 +333,11 @@ wait_event(PyBones_DebuggerObject *self, PyObject *args)
     Py_RETURN_TRUE;
 }
 
-static PyObject *
-on_event_thunk(PyBones_DebuggerObject *self, PyObject *args)
-{
-    Py_RETURN_NONE;
-}
-
 static PyMethodDef methods[] = {
     { "spawn", (PyCFunction)spawn, METH_VARARGS, spawn__doc__ },
     { "attach", (PyCFunction)attach, METH_VARARGS, attach__doc__ },
     { "detach", (PyCFunction)detach, METH_VARARGS, detach__doc__ },
     { "wait_event", (PyCFunction)wait_event, METH_VARARGS, wait_event__doc__ },
-
-    { "_on_process_create", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_process_exit", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_thread_create", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_thread_exit", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_module_load", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_module_unload", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
-    { "_on_exception", (PyCFunction)on_event_thunk, METH_VARARGS, NULL },
     {NULL}  /* Sentinel */
 };
 

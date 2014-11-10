@@ -4,9 +4,6 @@
 #include "internal.h"
 #include "winternals.h"
 
-HANDLE
-_PyBones_Process_GetHandle(PyObject *self);
-
 typedef struct {
     PyObject_HEAD
     PVOID base_address; /* Base address of the module */
