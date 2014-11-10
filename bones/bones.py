@@ -2,10 +2,16 @@ import _bones
 
 class Process(_bones.Process):
     pass
+    
 class Thread(_bones.Thread):
     pass
+    
 class Module(_bones.Module):
-    pass
+
+    def get_path(self):
+        return self.process.query_section_file_name(self.base_address)
+    
+    path = property(get_path, None, None, "Module file path")
 
 class Debugger(_bones.Debugger):
     def __init__(self):
@@ -17,8 +23,9 @@ class Debugger(_bones.Debugger):
         self.processes[pid] = process
         try:
             self.on_process_create(process)
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_process_create' not in e.message:
+                raise
         self._on_module_load(pid, base_address)
         self._on_thread_create(pid, tid, thread_handle, start_address)
 
@@ -29,8 +36,9 @@ class Debugger(_bones.Debugger):
         process.modules[base_address] = module
         try:
             self.on_module_load(module)
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_module_load' not in e.message:
+                raise
         
     def _on_thread_create(self, pid, tid, handle, start_address):
         # print "[%05d/%05d] Thread created: handle = %08x, start addr = %08x." % (pid, tid, handle, start_address)
@@ -39,8 +47,9 @@ class Debugger(_bones.Debugger):
         process.threads[tid] = thread
         try:
             self.on_thread_create(thread)
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_thread_create' not in e.message:
+                raise
         
     def _on_thread_exit(self, pid, tid, exit_status):
         # print "[%05d/%05d] Thread exited, status %08x." % (pid, tid, exit_status)
@@ -49,8 +58,9 @@ class Debugger(_bones.Debugger):
         thread.exit_status = exit_status
         try:
             self.on_thread_exit(thread)
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_thread_exit' not in e.message:
+                raise
         del process.threads[tid]
         
     def _on_module_unload(self, pid, base_address):
@@ -58,8 +68,9 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         try:
             self.on_module_unload(process.modules[base_address])
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_module_unload' not in e.message:
+                raise
         del process.modules[base_address]
         
     def _on_process_exit(self, pid, exit_status):
@@ -68,8 +79,9 @@ class Debugger(_bones.Debugger):
         process.exit_status = exit_status
         try:
             self.on_process_exit(self.processes[pid])
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_process_exit' not in e.message:
+                raise
         del self.processes[pid]
 
     def _on_exception(self, pid, tid, info, first_chance):
@@ -77,7 +89,8 @@ class Debugger(_bones.Debugger):
         thread = process.threads[tid]
         try:
             self.on_exception(thread, info, first_chance)
-        except AttributeError:
-            pass
+        except AttributeError, e:
+            if 'on_exception' not in e.message:
+                raise
         pass
 #

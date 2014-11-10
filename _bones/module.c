@@ -87,37 +87,10 @@ get_process(PyBones_ModuleObject *self, void *closure)
     return p;
 }
 
-static PyObject *
-get_name(PyBones_ModuleObject *self, void *closure)
-{
-    PyObject *p = self->name;
-    if (!p) {
-        p = Py_None;
-    }
-    Py_INCREF(p);
-    return p;
-}
-
-static PyObject *
-get_path(PyBones_ModuleObject *self, void *closure)
-{
-    PyObject *p = self->path;
-    if (!p) {
-        p = PyBones_Process_GetSectionFileNamePtr(self->process, self->base_address);
-        if (!p)
-            return NULL;
-        self->path = p;
-    }
-    Py_INCREF(p);
-    return p;
-}
-
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "base_address", (getter)get_base_address, NULL, "Module base address", NULL },
     { "process", (getter)get_process, NULL, "Owning process", NULL },
-    { "name", (getter)get_name, NULL, "Module name", NULL },
-    { "path", (getter)get_path, NULL, "Module path", NULL },
     {NULL}  /* Sentinel */
 };
 

@@ -29,6 +29,7 @@ class TestDebugger(bones.Debugger):
 
     def on_module_load(self, m):
         print "[%05d] Module loaded at %08x: %s." % (m.process.id, m.base_address, m.path)
+        print repr(m.process.query_memory(m.base_address))
 
     def on_module_unload(self, m):
         print "[%05d] Module unloaded at %08x." % (m.process.id, m.base_address)

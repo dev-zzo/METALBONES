@@ -153,6 +153,47 @@ PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void
 }
 
 PyObject *
+PyBones_Process_QueryMemoryPtr(PyObject *self, void *address)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+    MEMORY_BASIC_INFORMATION info;
+    const char *state;
+    const char *type;
+
+    status = NtQueryVirtualMemory(
+        _self->handle,
+        address,
+        MemoryBasicInformation,
+        &info,
+        sizeof(info),
+        NULL);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+    }
+
+    switch (info.State) {
+    case MEM_RESERVE: state = "reserved"; break;
+    case MEM_COMMIT: state = "commit"; break;
+    case MEM_FREE: state = "free"; break;
+    }
+
+    switch (info.Type) {
+    case MEM_PRIVATE: type = "private"; break;
+    case MEM_MAPPED: type = "mapped"; break;
+    case SEC_IMAGE: type = "image"; break;
+    }
+
+    return Py_BuildValue("(kkkkss)",
+        info.AllocationBase,
+        info.RegionSize,
+        info.AllocationProtect,
+        info.Protect,
+        state,
+        type);
+}
+
+PyObject *
 PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
@@ -184,8 +225,8 @@ PyDoc_STRVAR(terminate__doc__,
 "terminate(self, exit_code)\n\n\
 Start the termination of this process.");
 
-PyObject *
-PyBones_Process_Terminate(PyObject *self, PyObject *args)
+static PyObject *
+terminate(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PyObject *result = NULL;
@@ -206,8 +247,46 @@ PyBones_Process_Terminate(PyObject *self, PyObject *args)
     return Py_None;
 }
 
+PyDoc_STRVAR(query_memory__doc__,
+"query_memory(self, address) -> \n\
+  (base_address, size, alloc_protect, curr_protect, state, type)\n\n\
+Query the process' VM at the given address.");
+
+static PyObject *
+query_memory(PyObject *self, PyObject *args)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    PVOID address;
+
+    if (!PyArg_ParseTuple(args, "k", &address)) {
+        return NULL;
+    }
+
+    return PyBones_Process_QueryMemoryPtr(self, address);
+}
+
+PyDoc_STRVAR(query_section_file_name__doc__,
+"query_section_file_name(self, address) -> string\n\n\
+Query the file name of a section at the given address.");
+
+static PyObject *
+query_section_file_name(PyObject *self, PyObject *args)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    PVOID address;
+
+    if (!PyArg_ParseTuple(args, "k", &address)) {
+        return NULL;
+    }
+
+    return PyBones_Process_GetSectionFileNamePtr(self, address);
+}
+
+
 static PyMethodDef methods[] = {
-    { "terminate", (PyCFunction)PyBones_Process_Terminate, METH_VARARGS, terminate__doc__ },
+    { "terminate", (PyCFunction)terminate, METH_VARARGS, terminate__doc__ },
+    { "query_memory", (PyCFunction)query_memory, METH_VARARGS, query_memory__doc__ },
+    { "query_section_file_name", (PyCFunction)query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
     {NULL}  /* Sentinel */
 };
 
@@ -223,6 +302,12 @@ static PyObject *
 get_image_base(PyBones_ProcessObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->image_base);
+}
+
+static PyObject *
+get_peb_address(PyBones_ProcessObject *self, void *closure)
+{
+    return PyLong_FromUnsignedLong((UINT_PTR)self->peb_address);
 }
 
 static PyObject *
@@ -270,6 +355,7 @@ static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)get_id, NULL, "Unique process ID", NULL },
     { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
+    { "peb_address", (getter)get_peb_address, NULL, "Process Environment Block address", NULL },
     { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the process exits", NULL },
     { "threads", (getter)get_threads, NULL, "Threads running within the process", NULL },
     { "modules", (getter)get_modules, NULL, "Modules mapped within the process", NULL },

@@ -72,9 +72,11 @@
     <ClCompile Include="module.c" />
     <ClCompile Include="process.c" />
     <ClCompile Include="thread.c" />
+    <ClCompile Include="whelpers.c" />
     <ClCompile Include="_bones.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="whelpers.h" />
     <ClInclude Include="winternals.h" />
     <ClInclude Include="internal.h" />
     <ClInclude Include="_bones.h" />
