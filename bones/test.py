@@ -11,6 +11,7 @@ class TestDebugger(bones.Debugger):
     def on_process_create(self, p):
         print "[%05d] Process created!!!" % (p.id)
         self.p = p
+        print "PEB at %08x" % p.peb_address
         
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)

@@ -67,6 +67,4 @@ init_bones(void)
     ready_add_type(m, "Module", &PyBones_Module_Type);
     ready_add_type(m, "ExceptionInfo", &PyBones_ExceptionInfo_Type);
     ready_add_type(m, "AccessViolationInfo", &PyBones_AccessViolationInfo_Type);
-
-    DEBUG_PRINT("METALBONES core loaded.\n");
 }

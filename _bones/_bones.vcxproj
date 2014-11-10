@@ -31,6 +31,7 @@
     <TargetExt>.pyd</TargetExt>
     <GenerateManifest>false</GenerateManifest>
     <OutDir>$(SolutionDir)build\</OutDir>
+    <CustomBuildAfterTargets />
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -56,9 +57,12 @@
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
+      <Command>xcopy $(TargetPath) $(SolutionDir)bones\</Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
       <Command>
       </Command>
-    </PostBuildEvent>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="context.c" />
