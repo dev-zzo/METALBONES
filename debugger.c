@@ -215,34 +215,34 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
             }
         }
 
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "ONONNN",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "OkOkkk",
             process_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateProcessInfo.HandleToProcess),
+            info->StateInfo.CreateProcessInfo.HandleToProcess,
             thread_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateProcessInfo.HandleToThread),
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateProcessInfo.NewProcess.BaseOfImage),
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateProcessInfo.NewProcess.InitialThread.StartAddress));
+            info->StateInfo.CreateProcessInfo.HandleToThread,
+            info->StateInfo.CreateProcessInfo.NewProcess.BaseOfImage,
+            info->StateInfo.CreateProcessInfo.NewProcess.InitialThread.StartAddress);
         break;
 
     case DbgExitProcessStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "ON",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "Ok",
             process_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.ExitProcess.ExitStatus));
+            info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgCreateThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "OONN",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "OOkk",
             process_id,
             thread_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateThread.HandleToThread),
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.CreateThread.NewThread.StartAddress));
+            info->StateInfo.CreateThread.HandleToThread,
+            info->StateInfo.CreateThread.NewThread.StartAddress);
         break;
 
     case DbgExitThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "OON",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "OOk",
             process_id,
             thread_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.ExitProcess.ExitStatus));
+            info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgExceptionStateChange:
@@ -266,18 +266,15 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgLoadDllStateChange:
-        /* DEBUG_PRINT("BONES: [%d/%d] Caught DbgLoadDllStateChange.\n", pid, tid); */
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "ON",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "Ok",
             process_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.LoadDll.BaseOfDll));
+            info->StateInfo.LoadDll.BaseOfDll);
         break;
 
     case DbgUnloadDllStateChange:
-        /* DEBUG_PRINT("BONES: [%d/%d] Caught DbgUnloadDllStateChange.\n", pid, tid); */
-        /* Borrowed. */
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "ON",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "Ok",
             process_id,
-            PyLong_FromUnsignedLong((UINT_PTR)info->StateInfo.UnloadDll.BaseOfDll));
+            info->StateInfo.UnloadDll.BaseOfDll);
         break;
 
     default:

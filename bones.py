@@ -12,7 +12,7 @@ class Debugger(_bones.Debugger):
         _bones.Debugger.__init__(self)
 
     def _on_process_create(self, pid, process_handle, tid, thread_handle, base_address, start_address):
-        print "[%05d] Process created." % (pid)
+        # print "[%05d] Process created." % (pid)
         process = Process(pid, process_handle, base_address)
         self.processes[pid] = process
         try:
@@ -23,7 +23,7 @@ class Debugger(_bones.Debugger):
         self._on_thread_create(pid, tid, thread_handle, start_address)
 
     def _on_module_load(self, pid, base_address):
-        print "[%05d] Module loaded: %08x." % (pid, base_address)
+        # print "[%05d] Module loaded: %08x." % (pid, base_address)
         process = self.processes[pid]
         module = Module(base_address, process)
         process.modules[base_address] = module
@@ -33,7 +33,7 @@ class Debugger(_bones.Debugger):
             pass
         
     def _on_thread_create(self, pid, tid, handle, start_address):
-        print "[%05d/%05d] Thread created: handle = %08x, start addr = %08x." % (pid, tid, handle, start_address)
+        # print "[%05d/%05d] Thread created: handle = %08x, start addr = %08x." % (pid, tid, handle, start_address)
         process = self.processes[pid]
         thread = Thread(tid, handle, process, start_address)
         process.threads[tid] = thread
@@ -43,7 +43,7 @@ class Debugger(_bones.Debugger):
             pass
         
     def _on_thread_exit(self, pid, tid, exit_status):
-        print "[%05d/%05d] Thread exited, status %08x." % (pid, tid, exit_status)
+        # print "[%05d/%05d] Thread exited, status %08x." % (pid, tid, exit_status)
         process = self.processes[pid]
         thread = process.threads[tid]
         thread.exit_status = exit_status
@@ -54,7 +54,7 @@ class Debugger(_bones.Debugger):
         del process.threads[tid]
         
     def _on_module_unload(self, pid, base_address):
-        print "[%05d] Module unloaded: %08x." % (pid, base_address)
+        # print "[%05d] Module unloaded: %08x." % (pid, base_address)
         process = self.processes[pid]
         try:
             self.on_module_unload(process.modules[base_address])
@@ -63,7 +63,7 @@ class Debugger(_bones.Debugger):
         del process.modules[base_address]
         
     def _on_process_exit(self, pid, exit_status):
-        print "[%05d] Process exited, status %08x." % (pid, exit_status)
+        # print "[%05d] Process exited, status %08x." % (pid, exit_status)
         process = self.processes[pid]
         process.exit_status = exit_status
         try:
