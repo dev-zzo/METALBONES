@@ -16,3 +16,6 @@
 *.user
 Debug
 Release
+
+# Ignore built files
+build/*
