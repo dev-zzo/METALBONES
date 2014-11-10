@@ -22,6 +22,17 @@ exinfo_dealloc(PyBones_ExceptionInfoObject *self)
 }
 
 static PyObject *
+exinfo_to_str(PyBones_ExceptionInfoObject *self)
+{
+    char buffer[128];
+
+    sprintf(buffer, "Exception %08x (%s) at %08x (%s)",
+        self->code, "TBD",
+        self->address, "TBD");
+    return PyString_FromString(buffer);
+}
+
+static PyObject *
 get_code(PyBones_ExceptionInfoObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong(self->code);
@@ -73,7 +84,7 @@ PyTypeObject PyBones_ExceptionInfo_Type = {
     0,  /*tp_as_mapping*/
     0,  /*tp_hash */
     0,  /*tp_call*/
-    0,  /*tp_str*/
+    (reprfunc)exinfo_to_str,  /*tp_str*/
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
@@ -106,20 +117,38 @@ typedef struct {
     PVOID data_address; /* Faulty access address */
 } PyBones_AccessViolationInfoObject;
 
-static PyObject *
-get_access_type(PyBones_AccessViolationInfoObject *self, void *closure)
+static const char *const
+get_access_type_str(PyBones_AccessViolationInfoObject *self)
 {
     switch (self->access_type) {
     case 0:
-        return PyString_FromString("read");
+        return "read";
     case 1:
-        return PyString_FromString("write");
+        return "write";
     case 8:
-        return PyString_FromString("dep");
+        return "dep";
     default:
         /* Raise an exception? */
-        return PyString_FromString("UNKNOWN");
+        return "UNKNOWN";
     }
+}
+
+static PyObject *
+get_access_type(PyBones_AccessViolationInfoObject *self, void *closure)
+{
+    return PyString_FromString(get_access_type_str(self));
+}
+
+static PyObject *
+avinfo_to_str(PyBones_AccessViolationInfoObject *self)
+{
+    char buffer[128];
+
+    sprintf(buffer, "Access violation at %08x (%s): %s access to %08x",
+        self->ei.address, "TBD",
+        get_access_type_str(self),
+        self->data_address);
+    return PyString_FromString(buffer);
 }
 
 static PyObject *
@@ -152,7 +181,7 @@ PyTypeObject PyBones_AccessViolationInfo_Type = {
     0,  /*tp_as_mapping*/
     0,  /*tp_hash */
     0,  /*tp_call*/
-    0,  /*tp_str*/
+    (reprfunc)avinfo_to_str,  /*tp_str*/
     0,  /*tp_getattro*/
     0,  /*tp_setattro*/
     0,  /*tp_as_buffer*/
