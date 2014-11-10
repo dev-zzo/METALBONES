@@ -30,7 +30,7 @@
     <LinkIncremental>false</LinkIncremental>
     <TargetExt>.pyd</TargetExt>
     <GenerateManifest>false</GenerateManifest>
-    <OutDir>$(SolutionDir)build\</OutDir>
+    <OutDir>$(Configuration)\</OutDir>
     <CustomBuildAfterTargets />
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -57,7 +57,7 @@
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy $(TargetPath) $(SolutionDir)bones\</Command>
+      <Command>xcopy /y $(TargetPath) $(SolutionDir)bones\</Command>
     </PostBuildEvent>
     <CustomBuildStep>
       <Command>
