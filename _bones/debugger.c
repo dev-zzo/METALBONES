@@ -176,7 +176,6 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     DWORD tid = (DWORD)info->AppClientId.UniqueThread;
     int result = -1;
     NTSTATUS status;
-    NTSTATUS continue_status = DBG_CONTINUE;
     PyObject *cb_result = NULL;
 
     switch (info->NewState) {
@@ -207,7 +206,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
             }
         }
 
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "kkkkkk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_create", "ikikkk",
             info->AppClientId.UniqueProcess,
             info->StateInfo.CreateProcessInfo.HandleToProcess,
             info->AppClientId.UniqueThread,
@@ -217,13 +216,13 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgExitProcessStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "kk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_process_exit", "ik",
             info->AppClientId.UniqueProcess,
             info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgCreateThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "kkkk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_create", "iikk",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread,
             info->StateInfo.CreateThread.HandleToThread,
@@ -231,41 +230,42 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgExitThreadStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "kkk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_thread_exit", "iik",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread,
             info->StateInfo.ExitProcess.ExitStatus);
         break;
 
     case DbgExceptionStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_exception", "kkNN",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_exception", "iiNN",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread,
             _PyBones_ExceptionInfo_Translate(&info->StateInfo.Exception.ExceptionRecord),
             PyBool_FromLong(info->StateInfo.Exception.FirstChance));
-        /* FIXME: this is the only event where passing DBG_CONTINUE is wrong? */
-        continue_status = DBG_EXCEPTION_NOT_HANDLED;
         break;
 
     case DbgBreakpointStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
-        result = 0;
-        continue_status = DBG_EXCEPTION_HANDLED;
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_breakpoint", "ii",
+            info->AppClientId.UniqueProcess,
+            info->AppClientId.UniqueThread);
         break;
 
     case DbgSingleStepStateChange:
         DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
-        result = 0;
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_single_step", "ii",
+            info->AppClientId.UniqueProcess,
+            info->AppClientId.UniqueThread);
         break;
 
     case DbgLoadDllStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "kk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_load", "ik",
             info->AppClientId.UniqueProcess,
             info->StateInfo.LoadDll.BaseOfDll);
         break;
 
     case DbgUnloadDllStateChange:
-        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "kk",
+        cb_result = PyObject_CallMethod((PyObject *)self, "_on_module_unload", "ik",
             info->AppClientId.UniqueProcess,
             info->StateInfo.UnloadDll.BaseOfDll);
         break;
@@ -276,14 +276,29 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     }
 
     if (cb_result) {
-        Py_DECREF(cb_result);
-        result = 0;
-    }
+        NTSTATUS continue_status = -1;
 
-    status = NtDebugContinue(self->dbgui_object, &info->AppClientId, continue_status);
-    if (!NT_SUCCESS(status)) {
-        PyBones_RaiseNtStatusError(status);
-        result = -1;
+        if (PyInt_CheckExact(cb_result)) {
+            continue_status = PyInt_AS_LONG(cb_result);
+        }
+        else if (PyLong_CheckExact(cb_result)) {
+            continue_status = PyLong_AsUnsignedLong(cb_result);
+        }
+        else {
+            /* Raise a TypeError */
+            PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
+        }
+        Py_DECREF(cb_result);
+
+        if (continue_status != -1) {
+            status = NtDebugContinue(self->dbgui_object, &info->AppClientId, continue_status);
+            if (!NT_SUCCESS(status)) {
+                PyBones_RaiseNtStatusError(status);
+            }
+            else {
+                result = 0;
+            }
+        }
     }
 
     return result;
@@ -403,3 +418,29 @@ PyTypeObject PyBones_Debugger_Type = {
     new,  /* tp_new */
 };
 
+int
+init_Debugger(PyObject* m)
+{
+    int rv;
+    PyObject *tp_dict;
+
+    tp_dict = PyDict_New();
+    PyDict_SetItemString(tp_dict, "DBG_EXCEPTION_HANDLED",
+        PyLong_FromUnsignedLong(0x00010001));
+    PyDict_SetItemString(tp_dict, "DBG_CONTINUE",
+        PyLong_FromUnsignedLong(0x00010002));
+    PyDict_SetItemString(tp_dict, "DBG_EXCEPTION_NOT_HANDLED",
+        PyLong_FromUnsignedLong(0x80010001));
+    PyDict_SetItemString(tp_dict, "DBG_TERMINATE_THREAD",
+        PyLong_FromUnsignedLong(0x40010003));
+    PyDict_SetItemString(tp_dict, "DBG_TERMINATE_PROCESS",
+        PyLong_FromUnsignedLong(0x40010004));
+    PyBones_Debugger_Type.tp_dict = tp_dict;
+
+    rv = PyType_Ready(&PyBones_Debugger_Type);
+    if (rv < 0)
+        return rv;
+
+    Py_INCREF(&PyBones_Debugger_Type);
+    return PyModule_AddObject(m, "Debugger", (PyObject *)&PyBones_Debugger_Type);
+}

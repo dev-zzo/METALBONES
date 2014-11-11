@@ -133,27 +133,67 @@ _PyBones_Process_GetPebAddress(PyObject *self)
     return _self->peb_address;
 }
 
-int
-PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void *buffer)
+PyObject *
+PyBones_Process_ReadMemory(PyObject *self, void *address, unsigned size)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     NTSTATUS status;
-    int read = -1;
+    PyObject *buffer;
+    unsigned read;
+
+    buffer = PyString_FromStringAndSize(NULL, size);
+    if (!buffer) {
+        goto exit0;
+    }
 
     status = NtReadVirtualMemory(
         _self->handle,
         address,
-        buffer,
+        PyString_AS_STRING(buffer),
         size,
         &read);
     if (!NT_SUCCESS(status)) {
         PyBones_RaiseNtStatusError(status);
+        goto exit1;
     }
-    return read;
+
+    if (read != size) {
+        if (_PyString_Resize(&buffer, read) < 0) {
+            goto exit1;
+        }
+    }
+
+    return buffer;
+
+exit1:
+    Py_DECREF(buffer);
+exit0:
+    return NULL;
 }
 
 PyObject *
-PyBones_Process_QueryMemoryPtr(PyObject *self, void *address)
+PyBones_Process_WriteMemory(PyObject *self, void *address, unsigned size, PyObject *buffer)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+    unsigned written;
+
+    status = NtWriteVirtualMemory(
+        _self->handle,
+        address,
+        PyString_AS_STRING(buffer),
+        size,
+        &written);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyObject *
+PyBones_Process_QueryMemory(PyObject *self, void *address)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     NTSTATUS status;
@@ -194,7 +234,7 @@ PyBones_Process_QueryMemoryPtr(PyObject *self, void *address)
 }
 
 PyObject *
-PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address)
+PyBones_Process_GetSectionFileName(PyObject *self, void *address)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     NTSTATUS status;
@@ -247,6 +287,48 @@ terminate(PyObject *self, PyObject *args)
     return Py_None;
 }
 
+PyDoc_STRVAR(read_memory__doc__,
+"read_memory(self, address, size) -> string\n\n\
+Read the process' memory.");
+
+static PyObject *
+read_memory(PyObject *self, PyObject *args)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    PVOID address;
+    unsigned size;
+
+    if (!PyArg_ParseTuple(args, "kk", &address, &size)) {
+        return NULL;
+    }
+
+    return PyBones_Process_ReadMemory(self, address, size);
+}
+
+PyDoc_STRVAR(write_memory__doc__,
+"write_memory(self, address, size, data)\n\n\
+Write the process' memory.");
+
+static PyObject *
+write_memory(PyObject *self, PyObject *args)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    PVOID address;
+    unsigned size;
+    PyObject *data;
+
+    if (!PyArg_ParseTuple(args, "kkO", &address, &size, &data)) {
+        return NULL;
+    }
+
+    if (!PyString_CheckExact(data)) {
+        PyErr_SetString(PyExc_TypeError, "Expected data to be a string.");
+        return NULL;
+    }
+
+    return PyBones_Process_WriteMemory(self, address, size, data);
+}
+
 PyDoc_STRVAR(query_memory__doc__,
 "query_memory(self, address) -> \n\
   (base_address, size, alloc_protect, curr_protect, state, type)\n\n\
@@ -262,7 +344,7 @@ query_memory(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyBones_Process_QueryMemoryPtr(self, address);
+    return PyBones_Process_QueryMemory(self, address);
 }
 
 PyDoc_STRVAR(query_section_file_name__doc__,
@@ -279,12 +361,14 @@ query_section_file_name(PyObject *self, PyObject *args)
         return NULL;
     }
 
-    return PyBones_Process_GetSectionFileNamePtr(self, address);
+    return PyBones_Process_GetSectionFileName(self, address);
 }
 
 
 static PyMethodDef methods[] = {
     { "terminate", (PyCFunction)terminate, METH_VARARGS, terminate__doc__ },
+    { "read_memory", (PyCFunction)read_memory, METH_VARARGS, read_memory__doc__ },
+    { "write_memory", (PyCFunction)write_memory, METH_VARARGS, write_memory__doc__ },
     { "query_memory", (PyCFunction)query_memory, METH_VARARGS, query_memory__doc__ },
     { "query_section_file_name", (PyCFunction)query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
     {NULL}  /* Sentinel */

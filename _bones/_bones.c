@@ -13,6 +13,9 @@ static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
 };
 
+int
+init_Debugger(PyObject* m);
+
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
 #endif
@@ -58,7 +61,7 @@ init_bones(void)
     Py_INCREF(PyBones_NtStatusError);
     PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 
-    ready_add_type(m, "Debugger", &PyBones_Debugger_Type);
+    init_Debugger(m);
     ready_add_type(m, "Thread", &PyBones_Thread_Type);
     ready_add_type(m, "Process", &PyBones_Process_Type);
     ready_add_type(m, "EFlags", &PyBones_EFlags_Type);
