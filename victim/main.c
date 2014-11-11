@@ -21,7 +21,7 @@ int tc_00003(void)
 {
     char buf[4];
     memset(buf, 0x41, 32);
-    return 0;
+    return buf[0];
 }
 
 int CALLBACK WinMain(

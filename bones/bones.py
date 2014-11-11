@@ -1,13 +1,25 @@
 import _bones
+import os.path
 
 class Process(_bones.Process):
-    """An abstarction representing a debugged process."""
-    # Nothing yet.
-    pass
+    """An abstraction representing a debugged process."""
+    
+    def get_module_from_va(self, address):
+        for m in self.modules.values():
+            base = m.base_address
+            if base <= address < (base + m.mapped_size):
+                return m
+        return None
+    
+    def get_location_from_va(self, address):
+        m = self.get_module_from_va(address)
+        if m is None:
+            return "%08x" % address
+        return "%s+%08x" % (os.path.basename(m.path), address - m.base_address)
 #
 
 class Thread(_bones.Thread):
-    """An abstarction representing a thread within a debugged process."""
+    """An abstraction representing a thread within a debugged process."""
     
     def enable_single_step(self):
         ctx = self.context
@@ -16,22 +28,21 @@ class Thread(_bones.Thread):
 #
     
 class Module(_bones.Module):
-    """An abstarction representing a module within a debugged process."""
+    """An abstraction representing a module within a debugged process."""
     
     def get_mapped_size(self):
         try:
             return self._mapped_size
         except:
             size = 0
-            addr = self.base_address
+            address = self.base_address
             while True:
                 try:
-                    pages = self.process.query_memory(addr)
+                    pages = self.process.query_memory(address)
                     size += pages[1]
-                    addr += pages[1]
-                    print repr(pages)
+                    address += pages[1]
                     # Hit another module?
-                    if self.process.query_section_file_name(addr) != self.path:
+                    if self.process.query_section_file_name(address) != self.path:
                         break
                 except _bones.NtStatusError:
                     # Hit unallocated space?
@@ -165,7 +176,7 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
-            self.on_breakpoint(thread, info, first_chance)
+            self.on_breakpoint(thread)
         except AttributeError, e:
             if 'on_breakpoint' not in e.message:
                 raise
@@ -177,7 +188,7 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
-            self.on_single_step(thread, info, first_chance)
+            self.on_single_step(thread)
         except AttributeError, e:
             if 'on_single_step' not in e.message:
                 raise

@@ -9,15 +9,11 @@ class TestDebugger(bones.Debugger):
         self.p = None
 
     def on_process_create(self, p):
-        print "[%05d] Process created!!!" % (p.id)
+        print "[%05d] Process created." % (p.id)
         self.p = p
-        print "PEB at %08x" % p.peb_address
 
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)
-        print "Thread context:"
-        print str(t.context)
-        print "TEB at %08x" % t.teb_address
 
     def on_thread_exit(self, t):
         print "[%05d/%05d] Thread exited, status %08x." % (t.process.id, t.id, t.exit_status)
@@ -34,13 +30,19 @@ class TestDebugger(bones.Debugger):
         print "[%05d] Module unloaded at %08x." % (m.process.id, m.base_address)
 
     def on_exception(self, t, info, first_chance):
-        print "[%05d/%05d] Exception caught; first-chance: %s." % (t.process.id, t.id, first_chance)
+        print "[%05d/%05d] Exception caught (%s-chance)." % (t.process.id, t.id, "first" if first_chance else "second")
         print str(info)
+
+    def on_breakpoint(self, t):
+        print "[%05d/%05d] Breakpoint hit." % (t.process.id, t.id)
+        ctx = t.context
+        print str(ctx)
+        print "Location: %s" % (t.process.get_location_from_va(ctx.eip))
 #
 
 d = TestDebugger()
 
-d.spawn('victim.exe 1')
+d.spawn('victim.exe 3')
 
 while not d.done:
     if not d.wait_event(1000):
