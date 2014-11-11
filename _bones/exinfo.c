@@ -25,11 +25,29 @@ static PyObject *
 exinfo_to_str(PyBones_ExceptionInfoObject *self)
 {
     char buffer[128];
+    PyObject *result;
 
     sprintf(buffer, "Exception %08x (%s) at %08x (%s)",
         self->code, "TBD",
         self->address, "TBD");
-    return PyString_FromString(buffer);
+    result = PyString_FromString(buffer);
+    if (!result) {
+        return NULL;
+    }
+
+    if (self->nested) {
+        PyObject *nested_str;
+
+        nested_str = PyObject_Str(self->nested);
+        if (!nested_str) {
+            Py_DECREF(result);
+            return NULL;
+        }
+
+        PyString_ConcatAndDel(&result, nested_str);
+    }
+
+    return result;
 }
 
 static PyObject *
