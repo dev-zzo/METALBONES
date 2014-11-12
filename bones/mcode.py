@@ -12,51 +12,61 @@ class UnknownOpcodeError(Error):
     pass
 
 class Register:
-    def __init__(self, name, bits):
+    def __init__(self, name, size):
         self.name = name
-        self.bits = bits
+        self.size = size
 #
 
-# 64-bit regs
-reg_rax = Register("rax", 64)
-reg_rcx = Register("rcx", 64)
-reg_rdx = Register("rdx", 64)
-reg_rbx = Register("rbx", 64)
-reg_rsp = Register("rsp", 64)
-reg_rbp = Register("rbp", 64)
-reg_rsi = Register("rsi", 64)
-reg_rdi = Register("rdi", 64)
-
-# 32-bit regs
-reg_eax = Register("eax", 32)
-reg_ecx = Register("ecx", 32)
-reg_edx = Register("edx", 32)
-reg_ebx = Register("ebx", 32)
-reg_esp = Register("esp", 32)
-reg_ebp = Register("ebp", 32)
-reg_esi = Register("esi", 32)
-reg_edi = Register("edi", 32)
-
-# 16-bit regs
-reg_ax = Register("ax", 16)
-reg_cx = Register("cx", 16)
-reg_dx = Register("dx", 16)
-reg_bx = Register("bx", 16)
-reg_sp = Register("sp", 16)
-reg_bp = Register("bp", 16)
-reg_si = Register("si", 16)
-reg_di = Register("di", 16)
-
-# 8-bit regs
-reg_al = Register("al", 8)
-reg_cl = Register("cl", 8)
-reg_dl = Register("dl", 8)
-reg_bl = Register("bl", 8)
-reg_ah = Register("ah", 8)
-reg_ch = Register("ch", 8)
-reg_dh = Register("dh", 8)
-reg_bh = Register("bh", 8)
-
+_register_map = {
+    "rax": Register("rax", 64),
+    "rcx": Register("rcx", 64),
+    "rdx": Register("rdx", 64),
+    "rbx": Register("rbx", 64),
+    "rsp": Register("rsp", 64),
+    "rbp": Register("rbp", 64),
+    "rsi": Register("rsi", 64),
+    "rdi": Register("rdi", 64),
+    "eax": Register("eax", 32),
+    "ecx": Register("ecx", 32),
+    "edx": Register("edx", 32),
+    "ebx": Register("ebx", 32),
+    "esp": Register("esp", 32),
+    "ebp": Register("ebp", 32),
+    "esi": Register("esi", 32),
+    "edi": Register("edi", 32),
+    "ax": Register("ax", 16),
+    "cx": Register("cx", 16),
+    "dx": Register("dx", 16),
+    "bx": Register("bx", 16),
+    "sp": Register("sp", 16),
+    "bp": Register("bp", 16),
+    "si": Register("si", 16),
+    "di": Register("di", 16),
+    "al": Register("al", 8),
+    "cl": Register("cl", 8),
+    "dl": Register("dl", 8),
+    "bl": Register("bl", 8),
+    "ah": Register("ah", 8),
+    "ch": Register("ch", 8),
+    "dh": Register("dh", 8),
+    "bh": Register("bh", 8),
+    "es": Register("es", 16),
+    "cs": Register("cs", 16),
+    "ss": Register("ss", 16),
+    "ds": Register("ds", 16),
+    "fs": Register("fs", 16),
+    "gs": Register("gs", 16),
+    "dr0": Register("dr0", 32),
+    "dr1": Register("dr1", 32),
+    "dr2": Register("dr2", 32),
+    "dr3": Register("dr3", 32),
+    "dr6": Register("dr6", 32),
+    "dr7": Register("dr7", 32),
+    "cr0": Register("cr0", 32),
+    "cr2": Register("cr2", 32),
+    "cr3": Register("cr3", 32),
+    "cr4": Register("cr4", 32),
+    }
 r64_decode = (
     reg_rax, reg_rcx, reg_rdx, reg_rbx,
     reg_rsp, reg_rbp, reg_rsi, reg_rdi)
@@ -66,41 +76,15 @@ r32_decode = (
 r16_decode = (
     reg_ax, reg_cx, reg_dx, reg_bx,
     reg_sp, reg_bp, reg_si, reg_di)
-#
-
-reg_es = Register("es", 16)
-reg_cs = Register("cs", 16)
-reg_ss = Register("ss", 16)
-reg_ds = Register("ds", 16)
-reg_fs = Register("fs", 16)
-reg_gs = Register("gs", 16)
-
 rseg_decode = (
     reg_es, reg_cs, reg_ss, reg_ds,
     reg_fs, reg_gs, None, None)
-#
-
-reg_dr0 = Register("dr0", 32)
-reg_dr1 = Register("dr1", 32)
-reg_dr2 = Register("dr2", 32)
-reg_dr3 = Register("dr3", 32)
-reg_dr6 = Register("dr6", 32)
-reg_dr7 = Register("dr7", 32)
-
 rdebug_decode = (
     reg_dr0, reg_dr1, reg_dr2, reg_dr3,
     None, None, reg_dr6, reg_dr7)
-#
-
-reg_cr0 = Register("cr0", 32)
-reg_cr2 = Register("cr2", 32)
-reg_cr3 = Register("cr3", 32)
-reg_cr4 = Register("cr4", 32)
-
 rcontrol_decode = (
     reg_cr0, None, reg_cr2, reg_cr3,
     reg_cr4, None, None, None)
-#
 
 class State:
     def __init__(self, reader):
@@ -111,18 +95,59 @@ class State:
         self.modrm = None
         # SIB byte fetched
         self.sib = None
+        self.disp = None
+        self.disp_size = 0
+        self.imm = None
+        self.imm_size = 0
         
         self.bitness = 32
+        self.operand_width = self.bitness
+        self.address_width = self.bitness
+        
         self.seg_override = None
         self.prefix_66 = False # Operand size
         self.prefix_67 = False # Address size
         self.prefix_F2 = False # REPNE
         self.prefix_F3 = False # REPE
         
-    def fetch(self):
+    def fetch_opcode(self):
         b = self.reader.read()
         self.opcode += b
         return b
+    def fetch_modrm(self):
+        if self.modrm is None:
+            modrm = self.fetch_opcode()
+            self.modrm = modrm
+            self.mod = modrm >> 6
+            self.reg = (modrm >> 3) & 0x07
+            self.regmem = modrm & 0x07
+        return self.modrm
+    def fetch_sib(self):
+        if self.sib is None:
+            sib = self.fetch_opcode()
+            self.sib = sib
+            self.scale = sib >> 6
+            self.index = (sib >> 3) & 0x07
+            self.base = sib & 0x07
+        return self.sib
+    def fetch_mp(self, size):
+        d = 0L
+        if size >= 8:
+            d |= self.reader.read()
+        if size >= 16:
+            d |= self.reader.read() << 8
+        if size >= 32:
+            d |= (self.reader.read() << 16)
+            d |= (self.reader.read() << 24)
+        return d
+    def fetch_disp(self):
+        if self.disp is None and self.disp_size > 0:
+            self.disp = self.fetch_mp(self.disp_size)
+        return self.disp
+    def fetch_imm(self):
+        if self.imm is None and self.imm_size > 0:
+            self.imm = self.fetch_mp(self.imm_size)
+        return self.imm
 #
 
 class SegmentOverridePrefix:
@@ -148,7 +173,7 @@ class SwitchOpcode:
         self.entries = entries
         
     def __call__(self, state):
-        b = state.fetch()
+        b = state.fetch_opcode()
         e = self.entries[b]
         if e is None:
             raise UnknownOpcodeError()
@@ -183,7 +208,87 @@ class SwitchPrefix:
 #
 
 def _check_modrm(code):
+    if code is None:
+        return False
     return code[0] in "CDEGMNOPQRSUVW"
+def _check_imm(code):
+    if code is None:
+        return False
+    return code[0] == "I"
+
+_disp_lookup_16 = (
+    0,  0,  0,  0,  0,  0, 16,  0,
+    8,  8,  8,  8,  8,  8,  8,  8,
+    16, 16, 16, 16, 16, 16, 16, 16,
+    0,  0,  0,  0,  0,  0,  0,  0)
+_disp_lookup_32 = (
+    0,  0,  0,  0,  0, 32,  0,  0,
+    8,  8,  8,  8,  8,  8,  8,  8,
+    32, 32, 32, 32, 32, 32, 32, 32,
+    0,  0,  0,  0,  0,  0,  0,  0)
+
+def _get_operand_size(code, state):
+    code = code[1:]
+    if code == "b":
+        return 8
+    if code == "w":
+        return 16
+    if code == "d":
+        return 32
+    if code == "q":
+        return 64
+    if code == "p":
+        if state.operand_size == 16:
+            return 32
+        if state.operand_size == 32:
+            return 48
+        if state.operand_size == 64:
+            return 80
+    if code == "v":
+        if state.operand_size == 16:
+            return 16
+        if state.operand_size == 32:
+            return 32
+        if state.operand_size == 64:
+            return 64
+    if code == "y":
+        if state.operand_size == 64:
+            return 64
+        return 32
+    if code == "z":
+        if state.operand_size == 16:
+            return 16
+        return 32
+    raise UnknownOpcodeError()
+
+class OpDecoder:
+    def __init__(self, operands):
+        self.op_spec = operands
+
+    def __call__(self, state):
+        # Apply operand/address size modifiers
+        if state.prefix_66:
+            state.operand_width = 16 if state.operand_width != 16 else 32
+        if state.prefix_67:
+            state.address_width = 16 if state.address_width != 16 else 32
+        
+        # Check and parse ModR/M
+        modrm_needed = (_check_modrm(self.op_spec[0])
+            or _check_modrm(self.op_spec[1])
+            or _check_modrm(self.op_spec[2]))
+        if modrm_needed:
+            state.fetch_modrm()
+        
+        # Check and parse SIB
+        sib_needed = state.address_width == 32 and state.mod != 3 and state.regmem == 4
+        if sib_needed:
+            state.fetch_sib()
+            
+        # Check displacement
+        if state.address_width == 16:
+            state.disp_size = _disp_lookup_16[(state.mod << 3) + state.regmem]
+        else:
+            state.disp_size = _disp_lookup_32[(state.mod << 3) + state.regmem]
 
 class Insn:
     def __init__(self, mnemonic, operands, flags):
@@ -196,9 +301,9 @@ class Insn:
         # Legacy prefices
         # REX prefix
         # Opcode
-        # ModR/M
-        # SIB
-        # Displacement
+        # ModR/M (if present)
+        # SIB (if present)
+        # Displacement (if required by ModR/M or SIB)
         # Immediate
         pass
 #
