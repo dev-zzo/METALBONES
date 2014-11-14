@@ -11,10 +11,36 @@ class UnknownOpcodeError(Error):
     """Opcode is not marked invalid, but I don't know it."""
     pass
 
+_opwidth_names = (
+    "byte",
+    "word",
+    "dword",
+    "qword",
+    "tword",
+    "xmmword",
+    "ymmword",
+    "fword")
+_opwidth_bits = (
+    8,
+    16,
+    32,
+    64,
+    80,
+    128,
+    256,
+    48)
+
 class Immediate:
     def __init__(self, value, size):
         self.size = size # Data width, bits
         self.value = long(value)
+    def as_signed(self):
+        bits = 8 << self.size
+        if (self.value & (1 << (bits - 1))) != 0 :
+            return -((~self.value + 1) & ((1 << bits) - 1))
+        return self.value
+    def as_unsigned(self):
+        return self.value
 #
 class MemoryRef:
     def __init__(self, size, base=None, index=None, scale=1, displ=None):
@@ -23,11 +49,15 @@ class MemoryRef:
         self.index = index
         self.scale = scale
         self.displ = displ
+    def __str__(self):
+        return '[%s+%08x+%s*%d]' % (self.base, self.displ.as_signed(), self.index, self.scale)
 #
 class Register:
     def __init__(self, name, size):
         self.size = size # Data width, bits
         self.name = name
+    def __str__(self):
+        return self.name
 #
 
 _register_map = {
@@ -102,6 +132,15 @@ _rcontrol_decode = (
     _register_map["cr0"], None, _register_map["cr2"], _register_map["cr3"],
     _register_map["cr4"], None, None, None)
 
+class StringReader:
+    def __init__(self, data):
+        self.data = data
+        self.offset = 0
+    def read(self):
+        b = self.data[self.offset]
+        self.offset += 1
+        return b
+
 class State:
     def __init__(self, reader):
         self.reader = reader
@@ -125,10 +164,13 @@ class State:
         self.prefix_F2 = False # REPNE
         self.prefix_F3 = False # REPE
         
+    def decode(self):
+        self.handler = decode_main_32
+        return self.handler(self)
     def fetch_opcode(self):
         b = self.reader.read()
         self.opcode += b
-        return b
+        return ord(b)
     def fetch_modrm(self):
         if self.modrm is None:
             modrm = self.fetch_opcode()
@@ -147,12 +189,12 @@ class State:
         return self.sib
     def fetch_mp(self, size):
         d = 0L
-        d |= self.reader.read()
+        d |= ord(self.reader.read())
         if size >= 1:
-            d |= self.reader.read() << 8
+            d |= ord(self.reader.read()) << 8
         if size >= 2:
-            d |= (self.reader.read() << 16)
-            d |= (self.reader.read() << 24)
+            d |= ord(self.reader.read()) << 16
+            d |= ord(self.reader.read()) << 24
         return d
 #
 
@@ -166,12 +208,15 @@ class SegmentOverridePrefix:
         self.regname = regname
     def __call__(self, state):
         state.seg_override = self.regname
+        return state.handler(state)
 class OperandSizePrefix:
     def __call__(self, state):
         state.prefix_66 = True
+        return state.handler(state)
 class AddressSizePrefix:
     def __call__(self, state):
         state.prefix_67 = True
+        return state.handler(state)
 
 class SwitchOpcode:
     """Table switch based on insn opcode byte"""
@@ -179,6 +224,7 @@ class SwitchOpcode:
         self.entries = entries
         
     def __call__(self, state):
+        state.handler = self
         b = state.fetch_opcode()
         e = self.entries[b]
         if e is None:
@@ -220,60 +266,60 @@ def _check_imm(code):
 
 _modrm_lookup_16 = (
     # base, index, displacement size
+    (_register_map['bx'], _register_map['si'], None),
+    (_register_map['bx'], _register_map['di'], None),
+    (_register_map['bp'], _register_map['si'], None),
+    (_register_map['bp'], _register_map['di'], None),
+    (               None, _register_map['si'], None),
+    (               None, _register_map['si'], None),
+    (               None,                None, 1),
+    (_register_map['bx'],                None, None),
+    
     (_register_map['bx'], _register_map['si'], 0),
     (_register_map['bx'], _register_map['di'], 0),
     (_register_map['bp'], _register_map['si'], 0),
     (_register_map['bp'], _register_map['di'], 0),
     (               None, _register_map['si'], 0),
     (               None, _register_map['si'], 0),
-    (               None,                None, 16),
+    (_register_map['bp'],                None, 0),
     (_register_map['bx'],                None, 0),
     
-    (_register_map['bx'], _register_map['si'], 8),
-    (_register_map['bx'], _register_map['di'], 8),
-    (_register_map['bp'], _register_map['si'], 8),
-    (_register_map['bp'], _register_map['di'], 8),
-    (               None, _register_map['si'], 8),
-    (               None, _register_map['si'], 8),
-    (_register_map['bp'],                None, 8),
-    (_register_map['bx'],                None, 8),
-    
-    (_register_map['bx'], _register_map['si'], 16),
-    (_register_map['bx'], _register_map['di'], 16),
-    (_register_map['bp'], _register_map['si'], 16),
-    (_register_map['bp'], _register_map['di'], 16),
-    (               None, _register_map['si'], 16),
-    (               None, _register_map['si'], 16),
-    (_register_map['bp'],                None, 16),
-    (_register_map['bx'],                None, 16))
+    (_register_map['bx'], _register_map['si'], 1),
+    (_register_map['bx'], _register_map['di'], 1),
+    (_register_map['bp'], _register_map['si'], 1),
+    (_register_map['bp'], _register_map['di'], 1),
+    (               None, _register_map['si'], 1),
+    (               None, _register_map['si'], 1),
+    (_register_map['bp'],                None, 1),
+    (_register_map['bx'],                None, 1))
 _modrm_lookup_32 = (
     # base, displacement size
-    (_register_map['eax'],  0),
-    (_register_map['ecx'],  0),
-    (_register_map['edx'],  0),
-    (_register_map['ebx'],  0),
-    (                None,  0),
-    (                None, 32),
-    (_register_map['esi'],  0),
-    (_register_map['edi'],  0),
+    (_register_map['eax'], None),
+    (_register_map['ecx'], None),
+    (_register_map['edx'], None),
+    (_register_map['ebx'], None),
+    (                None, None),
+    (                None, 2),
+    (_register_map['esi'], None),
+    (_register_map['edi'], None),
 
-    (_register_map['eax'],  8),
-    (_register_map['ecx'],  8),
-    (_register_map['edx'],  8),
-    (_register_map['ebx'],  8),
-    (                None,  8),
-    (_register_map['ebp'],  8),
-    (_register_map['esi'],  8),
-    (_register_map['edi'],  8),
+    (_register_map['eax'], 0),
+    (_register_map['ecx'], 0),
+    (_register_map['edx'], 0),
+    (_register_map['ebx'], 0),
+    (                None, 0),
+    (_register_map['ebp'], 0),
+    (_register_map['esi'], 0),
+    (_register_map['edi'], 0),
 
-    (_register_map['eax'], 32),
-    (_register_map['ecx'], 32),
-    (_register_map['edx'], 32),
-    (_register_map['ebx'], 32),
-    (                None, 32),
-    (_register_map['ebp'], 32),
-    (_register_map['esi'], 32),
-    (_register_map['edi'], 32))
+    (_register_map['eax'], 2),
+    (_register_map['ecx'], 2),
+    (_register_map['edx'], 2),
+    (_register_map['ebx'], 2),
+    (                None, 2),
+    (_register_map['ebp'], 2),
+    (_register_map['esi'], 2),
+    (_register_map['edi'], 2))
 _sib_index_lookup = (
     _register_map['eax'],
     _register_map['ecx'],
@@ -307,18 +353,16 @@ _gpr_decode = (
     _r32_decode,
     _r64_decode)
     
-def _decode_reg(size, num):
-    return _gpr_decode[size][num]
 def _decode_E(state, size):
     if state.modrm_mod == 3:
-        return _decode_reg(size, state.modrm_reg)
+        return _gpr_decode[size][state.modrm_reg]
     else:
         b = None
         i = None
         s = 1
         d = None
         mod_rm = (state.modrm_mod << 3) + state.modrm_rm
-        if state.address_width = 1:
+        if state.address_width == 1:
             l = _modrm_lookup_16[mod_rm]
             d_size = l[2]
             b = l[0]
@@ -336,7 +380,7 @@ def _decode_E(state, size):
                     base = _sib_base_lookup_mod12[state.sib_base]
             else:
                 b = l[0]
-        if d_size > 0:
+        if d_size is not None:
             d = Immediate(state.fetch_mp(d_size), d_size)
         return MemoryRef(size, base=b, index=i, scale=s, displ=d)
 def _decode_Eb(state):
@@ -345,14 +389,14 @@ def _decode_Ew(state):
     return _decode_E(state, 1)
 def _decode_Ev(state):
     return _decode_E(state, state.operand_width)
-def _decode_Ew(state):
+def _decode_Ey(state):
     # FIXME: 64-bit
     return _decode_E(state, 2)
     
 def _decode_Gb(state):
     return _r8_decode[state.modrm_reg]
 def _decode_Gv(state):
-    return _decode_reg(state.operand_width, state.modrm_reg)
+    return _gpr_decode[state.operand_width][state.modrm_reg]
 def _decode_Gy(state):
     # FIXME: 64-bit
     return _r32_decode[state.modrm_reg]
@@ -376,61 +420,30 @@ def _decode_Dd(state):
     return r
 
 def _decode_Jb(state):
-    raise UnknownOpcodeError()
+    return Immediate(state.fetch_mp(0), 0)
 def _decode_Jz(state):
-    raise UnknownOpcodeError()
+    if state.operand_width == 1:
+        return Immediate(state.fetch_mp(1), 1)
+    return Immediate(state.fetch_mp(2), 2)
+
 def _decode_Ib(state):
-    raise UnknownOpcodeError()
+    return Immediate(state.fetch_mp(0), 0)
 def _decode_Iw(state):
-    raise UnknownOpcodeError()
+    return Immediate(state.fetch_mp(1), 1)
 def _decode_Iz(state):
-    raise UnknownOpcodeError()
+    if state.operand_width == 1:
+        return Immediate(state.fetch_mp(1), 1)
+    return Immediate(state.fetch_mp(2), 2)
 
-class OpDecoder:
-    def __init__(self, operands):
-        self.op_spec = operands
+def _decode_Mp(state):
+    raise InvalidOpcodeError()
 
-    def __call__(self, state):
-        # Apply operand/address size modifiers
-        if state.prefix_66:
-            state.operand_width = 1 if state.operand_width != 1 else 2
-        if state.prefix_67:
-            state.address_width = 1 if state.address_width != 1 else 2
-        
-        # Check and parse ModR/M
-        modrm_needed = (_check_modrm(self.op_spec[0])
-            or _check_modrm(self.op_spec[1])
-            or _check_modrm(self.op_spec[2]))
-        if modrm_needed:
-            state.fetch_modrm()
-        
-        # Check and parse SIB
-        sib_needed = state.address_width == 2 and state.mod != 3 and state.regmem == 4
-        if sib_needed:
-            state.fetch_sib()
-            
-
-    def _decode_op(self, state, op, flags):
-        amode = op[0]
-        if amode.isupper():
-            if op == 'Gv':
-                return _decode_Gv(state)
-            if op == 'Gb':
-                return _decode_Gb(state)
-            raise UnknownOpcodeError()
-        else:
-            # Must be a register reference
-            if op[0] == '?':
-                # Can choose based on current operand size
-                op = ('', 'e', 'r')[state.operand_width] + op[1:]
-            return _register_map[op]
-    
-class Insn:
+class Decode:
     def __init__(self, mnemonic, operands, flags):
         self.mnemonic = mnemonic
-        self.operands = operands
+        self.op_spec = operands
         self.flags = flags
-        
+
     def __call__(self, state):
         # General instruction structure is as follows
         # Legacy prefices
@@ -440,26 +453,74 @@ class Insn:
         # SIB (if present)
         # Displacement (if required by ModR/M or SIB)
         # Immediate
-        pass
+
+        # Apply operand/address size modifiers
+        if state.prefix_66:
+            state.operand_width = 1 if state.operand_width != 1 else 2
+        if state.prefix_67:
+            state.address_width = 1 if state.address_width != 1 else 2
+        
+        # Check and fetch ModR/M
+        modrm_needed = (_check_modrm(self.op_spec[0])
+            or _check_modrm(self.op_spec[1])
+            or _check_modrm(self.op_spec[2]))
+        if modrm_needed:
+            state.fetch_modrm()
+        
+        # Check and fetch SIB
+        sib_needed = state.address_width == 2 and state.modrm_mod != 3 and state.modrm_rm == 4
+        if sib_needed:
+            state.fetch_sib()
+            
+        # NOTE: Displacement comes before any immediate operands
+        # I am not sure how to work around that
+        decoded_ops = []
+        for spec in self.op_spec:
+            decoded_ops.append(self._decode_op(state, spec, self.flags))
+            
+        return Insn(self.mnemonic, decoded_ops)
+
+    def _decode_op(self, state, op, flags):
+        amode = op[0]
+        if amode.isupper():
+            if op == 'Ev': return _decode_Ev(state)
+            if op == 'Eb': return _decode_Eb(state)
+            if op == 'Gv': return _decode_Gv(state)
+            if op == 'Gb': return _decode_Gb(state)
+            raise UnknownOpcodeError(op)
+        else:
+            # Must be a register reference
+            if op[0] == '?':
+                # Can choose based on current operand size
+                op = ('', 'e', 'r')[state.operand_width] + op[1:]
+            return _register_map[op]
+    
+class Insn:
+    def __init__(self, mnemonic, operands):
+        self.mnemonic = mnemonic
+        self.operands = operands
+    def __str__(self):
+        ops_str = ', '.join(map(str, self.operands))
+        return '%s %s' % (self.mnemonic, ops_str)
 #
 
-decode_0F_32 = SwitchOpcode(
+decode_0F_32 = SwitchOpcode((
     # 00
     None, # ModRM opcode group 6
     None, # ModRM opcode group 7
-    Insn("lar",     ("Gv", "Ew"), ()),
-    Insn("lsl",     ("Gv", "Ew"), ()),
+    Decode("lar",       ("Gv", "Ew"), ()),
+    Decode("lsl",       ("Gv", "Ew"), ()),
     _invalidOpcode,
     _invalidOpcode, # SYSCALL -- only 64-bit
-    Insn("clts",    (), ()),
+    Decode("clts",      (), ()),
     _invalidOpcode, # SYSRET -- only 64-bit
     # 08
-    Insn("invd",    (), ()),
-    Insn("wbinvd",  (), ()),
+    Decode("invd",      (), ()),
+    Decode("wbinvd",    (), ()),
     _invalidOpcode,
-    Insn("ud2",     (), ()),
+    Decode("ud2",       (), ()),
     _invalidOpcode,
-    Insn("prefetchw", ("Ev"), ()),
+    Decode("prefetchw", ("Ev"), ()),
     _invalidOpcode,
     _invalidOpcode,
     # 10
@@ -473,25 +534,25 @@ decode_0F_32 = SwitchOpcode(
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode,
-    Insn("nop",     ("Ev"), ()),
+    Decode("nop",       ("Ev"), ()),
     # 20
-    Insn("mov",     ("Rd", "Cd"), ()),
-    Insn("mov",     ("Rd", "Dd"), ()),
-    Insn("mov",     ("Cd", "Rd"), ()),
-    Insn("mov",     ("Dd", "Rd"), ()),
+    Decode("mov",       ("Rd", "Cd"), ()),
+    Decode("mov",       ("Rd", "Dd"), ()),
+    Decode("mov",       ("Cd", "Rd"), ()),
+    Decode("mov",       ("Dd", "Rd"), ()),
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 28
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 30
-    Insn("wrmsr",   (), ()),
-    Insn("rdtsc",   (), ()),
-    Insn("rdmsr",   (), ()),
-    Insn("rdpmc",   (), ()),
-    Insn("sysenter", (), ()),
-    Insn("sysexit", (), ()),
+    Decode("wrmsr",     (), ()),
+    Decode("rdtsc",     (), ()),
+    Decode("rdmsr",     (), ()),
+    Decode("rdpmc",     (), ()),
+    Decode("sysenter",  (), ()),
+    Decode("sysexit",   (), ()),
     _invalidOpcode,
-    Insn("getsec",  (), ()),
+    Decode("getsec",    (), ()),
     # 38
     None, # Escape 0F38
     _invalidOpcode,
@@ -499,23 +560,23 @@ decode_0F_32 = SwitchOpcode(
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 40
-    Insn("cmovo",   ("Gv", "Ev"), ()),
-    Insn("cmovno",  ("Gv", "Ev"), ()),
-    Insn("cmovb",   ("Gv", "Ev"), ()),
-    Insn("cmovae",  ("Gv", "Ev"), ()),
-    Insn("cmove",   ("Gv", "Ev"), ()),
-    Insn("cmovne",  ("Gv", "Ev"), ()),
-    Insn("cmovbe",  ("Gv", "Ev"), ()),
-    Insn("cmova",   ("Gv", "Ev"), ()),
+    Decode("cmovo",     ("Gv", "Ev"), ()),
+    Decode("cmovno",    ("Gv", "Ev"), ()),
+    Decode("cmovb",     ("Gv", "Ev"), ()),
+    Decode("cmovae",    ("Gv", "Ev"), ()),
+    Decode("cmove",     ("Gv", "Ev"), ()),
+    Decode("cmovne",    ("Gv", "Ev"), ()),
+    Decode("cmovbe",    ("Gv", "Ev"), ()),
+    Decode("cmova",     ("Gv", "Ev"), ()),
     # 48
-    Insn("cmovs",   ("Gv", "Ev"), ()),
-    Insn("cmovns",  ("Gv", "Ev"), ()),
-    Insn("cmovp",   ("Gv", "Ev"), ()),
-    Insn("cmovnp",  ("Gv", "Ev"), ()),
-    Insn("cmovl",   ("Gv", "Ev"), ()),
-    Insn("cmovge",  ("Gv", "Ev"), ()),
-    Insn("cmovle",  ("Gv", "Ev"), ()),
-    Insn("cmovg",   ("Gv", "Ev"), ()),
+    Decode("cmovs",     ("Gv", "Ev"), ()),
+    Decode("cmovns",    ("Gv", "Ev"), ()),
+    Decode("cmovp",     ("Gv", "Ev"), ()),
+    Decode("cmovnp",    ("Gv", "Ev"), ()),
+    Decode("cmovl",     ("Gv", "Ev"), ()),
+    Decode("cmovge",    ("Gv", "Ev"), ()),
+    Decode("cmovle",    ("Gv", "Ev"), ()),
+    Decode("cmovg",     ("Gv", "Ev"), ()),
     # 50
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
@@ -532,98 +593,98 @@ decode_0F_32 = SwitchOpcode(
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 78
-    Insn("vmread",  ("Ey", "Gy"), ()),
-    Insn("vmwrite", ("Gy", "Ey"), ()),
+    Decode("vmread",    ("Ey", "Gy"), ()),
+    Decode("vmwrite",   ("Gy", "Ey"), ()),
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 80
-    Insn("jo",      ("Jz"), ()),
-    Insn("jno",     ("Jz"), ()),
-    Insn("jb",      ("Jz"), ()),
-    Insn("jae",     ("Jz"), ()),
-    Insn("je",      ("Jz"), ()),
-    Insn("jne",     ("Jz"), ()),
-    Insn("jbe",     ("Jz"), ()),
-    Insn("ja",      ("Jz"), ()),
+    Decode("jo",        ("Jz"), ()),
+    Decode("jno",       ("Jz"), ()),
+    Decode("jb",        ("Jz"), ()),
+    Decode("jae",       ("Jz"), ()),
+    Decode("je",        ("Jz"), ()),
+    Decode("jne",       ("Jz"), ()),
+    Decode("jbe",       ("Jz"), ()),
+    Decode("ja",        ("Jz"), ()),
     # 88
-    Insn("js",      ("Jz"), ()),
-    Insn("jns",     ("Jz"), ()),
-    Insn("jp",      ("Jz"), ()),
-    Insn("jnp",     ("Jz"), ()),
-    Insn("jl",      ("Jz"), ()),
-    Insn("jge",     ("Jz"), ()),
-    Insn("jle",     ("Jz"), ()),
-    Insn("jg",      ("Jz"), ()),
+    Decode("js",        ("Jz"), ()),
+    Decode("jns",       ("Jz"), ()),
+    Decode("jp",        ("Jz"), ()),
+    Decode("jnp",       ("Jz"), ()),
+    Decode("jl",        ("Jz"), ()),
+    Decode("jge",       ("Jz"), ()),
+    Decode("jle",       ("Jz"), ()),
+    Decode("jg",        ("Jz"), ()),
     # 90
-    Insn("seto",    ("Eb"), ()),
-    Insn("setno",   ("Eb"), ()),
-    Insn("setb",    ("Eb"), ()),
-    Insn("setae",   ("Eb"), ()),
-    Insn("sete",    ("Eb"), ()),
-    Insn("setne",   ("Eb"), ()),
-    Insn("setbe",   ("Eb"), ()),
-    Insn("seta",    ("Eb"), ()),
+    Decode("seto",      ("Eb"), ()),
+    Decode("setno",     ("Eb"), ()),
+    Decode("setb",      ("Eb"), ()),
+    Decode("setae",     ("Eb"), ()),
+    Decode("sete",      ("Eb"), ()),
+    Decode("setne",     ("Eb"), ()),
+    Decode("setbe",     ("Eb"), ()),
+    Decode("seta",      ("Eb"), ()),
     # 98
-    Insn("sets",    ("Eb"), ()),
-    Insn("setns",   ("Eb"), ()),
-    Insn("setp",    ("Eb"), ()),
-    Insn("setnp",   ("Eb"), ()),
-    Insn("setl",    ("Eb"), ()),
-    Insn("setge",   ("Eb"), ()),
-    Insn("setle",   ("Eb"), ()),
-    Insn("setg",    ("Eb"), ()),
+    Decode("sets",      ("Eb"), ()),
+    Decode("setns",     ("Eb"), ()),
+    Decode("setp",      ("Eb"), ()),
+    Decode("setnp",     ("Eb"), ()),
+    Decode("setl",      ("Eb"), ()),
+    Decode("setge",     ("Eb"), ()),
+    Decode("setle",     ("Eb"), ()),
+    Decode("setg",      ("Eb"), ()),
     # A0
-    Insn("push",    ("fs"), ()),
-    Insn("pop",     ("fs"), ()),
-    Insn("cpuid",   (), ()),
-    Insn("bt",      ("Ev", "Gv"), ()),
-    Insn("shld",    ("Ev", "Gv", "Ib", ()),
-    Insn("shld",    ("Ev", "Gv", "cl", ()),
+    Decode("push",      ("fs"), ()),
+    Decode("pop",       ("fs"), ()),
+    Decode("cpuid",     (), ()),
+    Decode("bt",        ("Ev", "Gv"), ()),
+    Decode("shld",      ("Ev", "Gv", "Ib"), ()),
+    Decode("shld",      ("Ev", "Gv", "cl"), ()),
     _invalidOpcode,
     _invalidOpcode,
     # A8
-    Insn("push",    ("gs"), ()),
-    Insn("pop",     ("gs"), ()),
-    Insn("rsm",     (), ()),
-    Insn("bts",     ("Ev", "Gv"), ()),
-    Insn("shrd",    ("Ev", "Gv", "Ib", ()),
-    Insn("shrd",    ("Ev", "Gv", "cl", ()),
+    Decode("push",      ("gs"), ()),
+    Decode("pop",       ("gs"), ()),
+    Decode("rsm",       (), ()),
+    Decode("bts",       ("Ev", "Gv"), ()),
+    Decode("shrd",      ("Ev", "Gv", "Ib"), ()),
+    Decode("shrd",      ("Ev", "Gv", "cl"), ()),
     None, # Group 15
-    Insn("imul",    ("Gv", "Ev"), ()),
+    Decode("imul",      ("Gv", "Ev"), ()),
     # B0
-    Insn("cmpxchg", ("Eb", "Gb"), ()),
-    Insn("cmpxchg", ("Ev", "Gv"), ()),
-    Insn("lss",     ("Gv", "Mp"), ()),
-    Insn("btr",     ("Ev", "Gv"), ()),
-    Insn("lfs",     ("Gv", "Mp"), ()),
-    Insn("lgs",     ("Gv", "Mp"), ()),
-    Insn("movzx",   ("Gv", "Eb"), ()),
-    Insn("movzx",   ("Gv", "Ew"), ()),
+    Decode("cmpxchg",   ("Eb", "Gb"), ()),
+    Decode("cmpxchg",   ("Ev", "Gv"), ()),
+    Decode("lss",       ("Gv", "Mp"), ()),
+    Decode("btr",       ("Ev", "Gv"), ()),
+    Decode("lfs",       ("Gv", "Mp"), ()),
+    Decode("lgs",       ("Gv", "Mp"), ()),
+    Decode("movzx",     ("Gv", "Eb"), ()),
+    Decode("movzx",     ("Gv", "Ew"), ()),
     # B8
     _invalidOpcode,
     None, # ModRM opcode group 10 ?
     None, # ModRM opcode group 8
-    Insn("btc",     ("Ev", "Gv"), ()),
-    Insn("bsf",     ("Gv", "Ev"), ()),
-    Insn("bsr",     ("Gv", "Ev"), ()),
-    Insn("movsx",   ("Gv", "Eb"), ()),
-    Insn("movsx",   ("Gv", "Ew"), ()),
+    Decode("btc",       ("Ev", "Gv"), ()),
+    Decode("bsf",       ("Gv", "Ev"), ()),
+    Decode("bsr",       ("Gv", "Ev"), ()),
+    Decode("movsx",     ("Gv", "Eb"), ()),
+    Decode("movsx",     ("Gv", "Ew"), ()),
     # C0
-    Insn("xadd",    ("Eb", "Gb"), ()),
-    Insn("xadd",    ("Ev", "Gv"), ()),
+    Decode("xadd",      ("Eb", "Gb"), ()),
+    Decode("xadd",      ("Ev", "Gv"), ()),
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # C8
-    Insn("bswap",   ("eax"), ("no66")),
-    Insn("bswap",   ("ecx"), ("no66")),
-    Insn("bswap",   ("edx"), ("no66")),
-    Insn("bswap",   ("ebx"), ("no66")),
-    Insn("bswap",   ("esp"), ("no66")),
-    Insn("bswap",   ("ebp"), ("no66")),
-    Insn("bswap",   ("esi"), ("no66")),
-    Insn("bswap",   ("edi"), ("no66")),
+    Decode("bswap",     ("eax"), ("no66")),
+    Decode("bswap",     ("ecx"), ("no66")),
+    Decode("bswap",     ("edx"), ("no66")),
+    Decode("bswap",     ("ebx"), ("no66")),
+    Decode("bswap",     ("esp"), ("no66")),
+    Decode("bswap",     ("ebp"), ("no66")),
+    Decode("bswap",     ("esi"), ("no66")),
+    Decode("bswap",     ("edi"), ("no66")),
     # D0
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
@@ -641,252 +702,253 @@ decode_0F_32 = SwitchOpcode(
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # F8
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
-    _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode)
+    _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode
+))
 
-decode_main_32 = SwitchOpcode(
+decode_main_32 = SwitchOpcode((
     # 00
-    Insn("add",     ("Eb", "Gb"), ()),
-    Insn("add",     ("Ev", "Gv"), ("allow66")),
-    Insn("add",     ("Gb", "Eb"), ()),
-    Insn("add",     ("Gv", "Ev"), ("allow66")),
-    Insn("add",     ("al", "Ib"), ()),
-    Insn("add",     ("?ax", "Iz"), ("allow66")),
-    Insn("push",    ("es"), ()), # invalid in x64
-    Insn("pop",     ("es"), ()), # invalid in x64
+    Decode("add",       ("Eb", "Gb"), ()),
+    Decode("add",       ("Ev", "Gv"), ("allow66")),
+    Decode("add",       ("Gb", "Eb"), ()),
+    Decode("add",       ("Gv", "Ev"), ("allow66")),
+    Decode("add",       ("al", "Ib"), ()),
+    Decode("add",       ("?ax", "Iz"), ("allow66")),
+    Decode("push",      ("es"), ()), # invalid in x64
+    Decode("pop",       ("es"), ()), # invalid in x64
     # 08
-    Insn("or",      ("Eb", "Gb"), ()),
-    Insn("or",      ("Ev", "Gv"), ("allow66")),
-    Insn("or",      ("Gb", "Eb"), ()),
-    Insn("or",      ("Gv", "Ev"), ("allow66")),
-    Insn("or",      ("al", "Ib"), ()),
-    Insn("or",      ("?ax", "Iz"), ("allow66")),
-    Insn("push",    ("cs"), ()), # invalid in x64
+    Decode("or",        ("Eb", "Gb"), ()),
+    Decode("or",        ("Ev", "Gv"), ("allow66")),
+    Decode("or",        ("Gb", "Eb"), ()),
+    Decode("or",        ("Gv", "Ev"), ("allow66")),
+    Decode("or",        ("al", "Ib"), ()),
+    Decode("or",        ("?ax", "Iz"), ("allow66")),
+    Decode("push",      ("cs"), ()), # invalid in x64
     decode_0F_32, # Escape 0F
     # 10
-    Insn("adc",     ("Eb", "Gb"), ()),
-    Insn("adc",     ("Ev", "Gv"), ("allow66")),
-    Insn("adc",     ("Gb", "Eb"), ()),
-    Insn("adc",     ("Gv", "Ev"), ("allow66")),
-    Insn("adc",     ("al", "Ib"), ()),
-    Insn("adc",     ("?ax", "Iz"), ("allow66")),
-    Insn("push",    ("ss"), ()), # invalid in x64
-    Insn("pop",     ("ss"), ()), # invalid in x64
+    Decode("adc",       ("Eb", "Gb"), ()),
+    Decode("adc",       ("Ev", "Gv"), ("allow66")),
+    Decode("adc",       ("Gb", "Eb"), ()),
+    Decode("adc",       ("Gv", "Ev"), ("allow66")),
+    Decode("adc",       ("al", "Ib"), ()),
+    Decode("adc",       ("?ax", "Iz"), ("allow66")),
+    Decode("push",      ("ss"), ()), # invalid in x64
+    Decode("pop",       ("ss"), ()), # invalid in x64
     # 18
-    Insn("sbb",     ("Eb", "Gb"), ()),
-    Insn("sbb",     ("Ev", "Gv"), ("allow66")),
-    Insn("sbb",     ("Gb", "Eb"), ()),
-    Insn("sbb",     ("Gv", "Ev"), ("allow66")),
-    Insn("sbb",     ("al", "Ib"), ()),
-    Insn("sbb",     ("?ax", "Iz"), ("allow66")),
-    Insn("push",    ("ds"), ()), # invalid in x64
-    Insn("pop",     ("ds"), ()), # invalid in x64
+    Decode("sbb",       ("Eb", "Gb"), ()),
+    Decode("sbb",       ("Ev", "Gv"), ("allow66")),
+    Decode("sbb",       ("Gb", "Eb"), ()),
+    Decode("sbb",       ("Gv", "Ev"), ("allow66")),
+    Decode("sbb",       ("al", "Ib"), ()),
+    Decode("sbb",       ("?ax", "Iz"), ("allow66")),
+    Decode("push",      ("ds"), ()), # invalid in x64
+    Decode("pop",       ("ds"), ()), # invalid in x64
     # 20
-    Insn("and",     ("Eb", "Gb"), ()),
-    Insn("and",     ("Ev", "Gv"), ("allow66")),
-    Insn("and",     ("Gb", "Eb"), ()),
-    Insn("and",     ("Gv", "Ev"), ("allow66")),
-    Insn("and",     ("al", "Ib"), ()),
-    Insn("and",     ("?ax", "Iz"), ("allow66")),
+    Decode("and",       ("Eb", "Gb"), ()),
+    Decode("and",       ("Ev", "Gv"), ("allow66")),
+    Decode("and",       ("Gb", "Eb"), ()),
+    Decode("and",       ("Gv", "Ev"), ("allow66")),
+    Decode("and",       ("al", "Ib"), ()),
+    Decode("and",       ("?ax", "Iz"), ("allow66")),
     SegmentOverridePrefix("es"),
-    Insn("daa",     (), ()),
+    Decode("daa",       (), ()),
     # 28
-    Insn("sub",     ("Eb", "Gb",), ()),
-    Insn("sub",     ("Ev", "Gv"), ("allow66")),
-    Insn("sub",     ("Gb", "Eb"), ()),
-    Insn("sub",     ("Gv", "Ev"), ("allow66")),
-    Insn("sub",     ("al", "Ib"), ()),
-    Insn("sub",     ("?ax", "Iz"), ("allow66")),
+    Decode("sub",       ("Eb", "Gb",), ()),
+    Decode("sub",       ("Ev", "Gv"), ("allow66")),
+    Decode("sub",       ("Gb", "Eb"), ()),
+    Decode("sub",       ("Gv", "Ev"), ("allow66")),
+    Decode("sub",       ("al", "Ib"), ()),
+    Decode("sub",       ("?ax", "Iz"), ("allow66")),
     SegmentOverridePrefix("cs"),
-    Insn("das",     (), ()),
+    Decode("das",       (), ()),
     # 30
-    Insn("xor",     ("Eb", "Gb"), ()),
-    Insn("xor",     ("Ev", "Gv"), ("allow66")),
-    Insn("xor",     ("Gb", "Eb"), ()),
-    Insn("xor",     ("Gv", "Ev"), ("allow66")),
-    Insn("xor",     ("al", "Ib"), ()),
-    Insn("xor",     ("?ax", "Iz"), ("allow66")),
+    Decode("xor",       ("Eb", "Gb"), ()),
+    Decode("xor",       ("Ev", "Gv"), ("allow66")),
+    Decode("xor",       ("Gb", "Eb"), ()),
+    Decode("xor",       ("Gv", "Ev"), ("allow66")),
+    Decode("xor",       ("al", "Ib"), ()),
+    Decode("xor",       ("?ax", "Iz"), ("allow66")),
     SegmentOverridePrefix("ss"),
-    Insn("aaa",     (), ()),
+    Decode("aaa",       (), ()),
     # 38
-    Insn("cmp",     ("Eb", "Gb"), ()),
-    Insn("cmp",     ("Ev", "Gv"), ("allow66")),
-    Insn("cmp",     ("Gb", "Eb"), ()),
-    Insn("cmp",     ("Gv", "Ev"), ("allow66")),
-    Insn("cmp",     ("al", "Ib"), ()),
-    Insn("cmp",     ("?ax", "Iz"), ("allow66")),
+    Decode("cmp",       ("Eb", "Gb"), ()),
+    Decode("cmp",       ("Ev", "Gv"), ("allow66")),
+    Decode("cmp",       ("Gb", "Eb"), ()),
+    Decode("cmp",       ("Gv", "Ev"), ("allow66")),
+    Decode("cmp",       ("al", "Ib"), ()),
+    Decode("cmp",       ("?ax", "Iz"), ("allow66")),
     SegmentOverridePrefix("ds"),
-    Insn("aas",     (), ()),
+    Decode("aas",       (), ()),
     # 40
-    Insn("inc",     ("?ax"), ("allow66")),
-    Insn("inc",     ("?cx"), ("allow66")),
-    Insn("inc",     ("?dx"), ("allow66")),
-    Insn("inc",     ("?bx"), ("allow66")),
-    Insn("inc",     ("?sp"), ("allow66")),
-    Insn("inc",     ("?bp"), ("allow66")),
-    Insn("inc",     ("?si"), ("allow66")),
-    Insn("inc",     ("?di"), ("allow66")),
+    Decode("inc",       ("?ax"), ("allow66")),
+    Decode("inc",       ("?cx"), ("allow66")),
+    Decode("inc",       ("?dx"), ("allow66")),
+    Decode("inc",       ("?bx"), ("allow66")),
+    Decode("inc",       ("?sp"), ("allow66")),
+    Decode("inc",       ("?bp"), ("allow66")),
+    Decode("inc",       ("?si"), ("allow66")),
+    Decode("inc",       ("?di"), ("allow66")),
     # 48
-    Insn("dec",     ("?ax"), ("allow66")),
-    Insn("dec",     ("?cx"), ("allow66")),
-    Insn("dec",     ("?dx"), ("allow66")),
-    Insn("dec",     ("?bx"), ("allow66")),
-    Insn("dec",     ("?sp"), ("allow66")),
-    Insn("dec",     ("?bp"), ("allow66")),
-    Insn("dec",     ("?si"), ("allow66")),
-    Insn("dec",     ("?di"), ("allow66")),
+    Decode("dec",       ("?ax"), ("allow66")),
+    Decode("dec",       ("?cx"), ("allow66")),
+    Decode("dec",       ("?dx"), ("allow66")),
+    Decode("dec",       ("?bx"), ("allow66")),
+    Decode("dec",       ("?sp"), ("allow66")),
+    Decode("dec",       ("?bp"), ("allow66")),
+    Decode("dec",       ("?si"), ("allow66")),
+    Decode("dec",       ("?di"), ("allow66")),
     # 50
-    Insn("push",    ("?ax"), ("allow66")),
-    Insn("push",    ("?cx"), ("allow66")),
-    Insn("push",    ("?dx"), ("allow66")),
-    Insn("push",    ("?bx"), ("allow66")),
-    Insn("push",    ("?sp"), ("allow66")),
-    Insn("push",    ("?bp"), ("allow66")),
-    Insn("push",    ("?si"), ("allow66")),
-    Insn("push",    ("?di"), ("allow66")),
+    Decode("push",      ("?ax"), ("allow66")),
+    Decode("push",      ("?cx"), ("allow66")),
+    Decode("push",      ("?dx"), ("allow66")),
+    Decode("push",      ("?bx"), ("allow66")),
+    Decode("push",      ("?sp"), ("allow66")),
+    Decode("push",      ("?bp"), ("allow66")),
+    Decode("push",      ("?si"), ("allow66")),
+    Decode("push",      ("?di"), ("allow66")),
     # 58
-    Insn("pop",     ("?ax"), ("allow66")),
-    Insn("pop",     ("?cx"), ("allow66")),
-    Insn("pop",     ("?dx"), ("allow66")),
-    Insn("pop",     ("?bx"), ("allow66")),
-    Insn("pop",     ("?sp"), ("allow66")),
-    Insn("pop",     ("?bp"), ("allow66")),
-    Insn("pop",     ("?si"), ("allow66")),
-    Insn("pop",     ("?di"), ("allow66")),
+    Decode("pop",       ("?ax"), ("allow66")),
+    Decode("pop",       ("?cx"), ("allow66")),
+    Decode("pop",       ("?dx"), ("allow66")),
+    Decode("pop",       ("?bx"), ("allow66")),
+    Decode("pop",       ("?sp"), ("allow66")),
+    Decode("pop",       ("?bp"), ("allow66")),
+    Decode("pop",       ("?si"), ("allow66")),
+    Decode("pop",       ("?di"), ("allow66")),
     # 60
-    Insn("pusha",   (), ()), # invalid in x64
-    Insn("popa",    (), ()), # invalid in x64
-    Insn("bound",   ("Gv", "Ma"), ()), # invalid in x64
-    Insn("arpl",    ("Ew", "Gw"), ()),
+    Decode("pusha",     (), ()), # invalid in x64
+    Decode("popa",      (), ()), # invalid in x64
+    Decode("bound",     ("Gv", "Ma"), ()), # invalid in x64
+    Decode("arpl",      ("Ew", "Gw"), ()),
     SegmentOverridePrefix("fs"),
     SegmentOverridePrefix("gs"),
     OperandSizePrefix(),
     AddressSizePrefix(),
     # 68
-    Insn("push",    ("Iz"), ("allow66")),
-    Insn("imul",    ("Gv", "Ev", "Iz", ("allow66")),
-    Insn("push",    ("Ib"), ()),
-    Insn("imul",    ("Gv", "Ev", "Ib", ("allow66")),
-    Insn("ins",     ("Yb", "dx"), ()),
-    Insn("ins",     ("Yz", "dx"), ("allow66")),
-    Insn("outs",    ("dx", "Xb"), ()),
-    Insn("outs",    ("dx", "Xz"), ("allow66")),
+    Decode("push",      ("Iz"), ("allow66")),
+    Decode("imul",      ("Gv", "Ev", "Iz"), ("allow66")),
+    Decode("push",      ("Ib"), ()),
+    Decode("imul",      ("Gv", "Ev", "Ib"), ("allow66")),
+    Decode("ins",       ("Yb", "dx"), ()),
+    Decode("ins",       ("Yz", "dx"), ("allow66")),
+    Decode("outs",      ("dx", "Xb"), ()),
+    Decode("outs",      ("dx", "Xz"), ("allow66")),
     # 70
-    Insn("jo",      ("Jb"), ()),
-    Insn("jno",     ("Jb"), ()),
-    Insn("jb",      ("Jb"), ()),
-    Insn("jae",     ("Jb"), ()),
-    Insn("je",      ("Jb"), ()),
-    Insn("jne",     ("Jb"), ()),
-    Insn("jbe",     ("Jb"), ()),
-    Insn("ja",      ("Jb"), ()),
+    Decode("jo",        ("Jb"), ()),
+    Decode("jno",       ("Jb"), ()),
+    Decode("jb",        ("Jb"), ()),
+    Decode("jae",       ("Jb"), ()),
+    Decode("je",        ("Jb"), ()),
+    Decode("jne",       ("Jb"), ()),
+    Decode("jbe",       ("Jb"), ()),
+    Decode("ja",        ("Jb"), ()),
     # 78
-    Insn("js",      ("Jb"), ()),
-    Insn("jns",     ("Jb"), ()),
-    Insn("jp",      ("Jb"), ()),
-    Insn("jnp",     ("Jb"), ()),
-    Insn("jl",      ("Jb"), ()),
-    Insn("jge",     ("Jb"), ()),
-    Insn("jle",     ("Jb"), ()),
-    Insn("jg",      ("Jb"), ()),
+    Decode("js",        ("Jb"), ()),
+    Decode("jns",       ("Jb"), ()),
+    Decode("jp",        ("Jb"), ()),
+    Decode("jnp",       ("Jb"), ()),
+    Decode("jl",        ("Jb"), ()),
+    Decode("jge",       ("Jb"), ()),
+    Decode("jle",       ("Jb"), ()),
+    Decode("jg",        ("Jb"), ()),
     # 80
     None, # ModRM opcode group 1
     None, # ModRM opcode group 1
     None, # ModRM opcode group 1
     None, # ModRM opcode group 1
-    Insn("test",    ("Eb", "Gb"), ()),
-    Insn("test",    ("Ev", "Gv"), ("allow66")),
-    Insn("xchg",    ("Eb", "Gb"), ()),
-    Insn("xchg",    ("Ev", "Gv"), ("allow66")),
+    Decode("test",      ("Eb", "Gb"), ()),
+    Decode("test",      ("Ev", "Gv"), ("allow66")),
+    Decode("xchg",      ("Eb", "Gb"), ()),
+    Decode("xchg",      ("Ev", "Gv"), ("allow66")),
     # 88
-    Insn("mov",     ("Eb", "Gb"), ()),
-    Insn("mov",     ("Ev", "Gv"), ("allow66")),
-    Insn("mov",     ("Gb", "Eb"), ()),
-    Insn("mov",     ("Gv", "Ev"), ("allow66")),
-    Insn("mov",     ("Ev", "Sw"), ("allow66")),
-    Insn("lea",     ("Ev", "M"), ("allow66")),
-    Insn("mov",     ("Sw", "Ew"), ("allow66")),
+    Decode("mov",       ("Eb", "Gb"), ()),
+    Decode("mov",       ("Ev", "Gv"), ("allow66")),
+    Decode("mov",       ("Gb", "Eb"), ()),
+    Decode("mov",       ("Gv", "Ev"), ("allow66")),
+    Decode("mov",       ("Ev", "Sw"), ("allow66")),
+    Decode("lea",       ("Ev", "M"), ("allow66")),
+    Decode("mov",       ("Sw", "Ew"), ("allow66")),
     None, # ModRM opcode group 1A
     # 90
-    Insn("nop",     (), ()),
-    Insn("xchg",    ("?cx", "?ax"), ("allow66")),
-    Insn("xchg",    ("?dx", "?ax"), ("allow66")),
-    Insn("xchg",    ("?bx", "?ax"), ("allow66")),
-    Insn("xchg",    ("?sp", "?ax"), ("allow66")),
-    Insn("xchg",    ("?bp", "?ax"), ("allow66")),
-    Insn("xchg",    ("?si", "?ax"), ("allow66")),
-    Insn("xchg",    ("?di", "?ax"), ("allow66")),
+    Decode("nop",       (), ()),
+    Decode("xchg",      ("?cx", "?ax"), ("allow66")),
+    Decode("xchg",      ("?dx", "?ax"), ("allow66")),
+    Decode("xchg",      ("?bx", "?ax"), ("allow66")),
+    Decode("xchg",      ("?sp", "?ax"), ("allow66")),
+    Decode("xchg",      ("?bp", "?ax"), ("allow66")),
+    Decode("xchg",      ("?si", "?ax"), ("allow66")),
+    Decode("xchg",      ("?di", "?ax"), ("allow66")),
     # 98
-    Insn("cwde",    (), ()),
-    Insn("cdq",     (), ()),
-    Insn("callf",   ("Ap"), ()),
-    Insn("wait",    (), ()),
-    Insn("pushf",   ("Fv"), ()),
-    Insn("popf",    ("Fv"), ()),
-    Insn("sahf",    (), ()),
-    Insn("lahf",    (), ()),
+    Decode("cwde",      (), ()),
+    Decode("cdq",       (), ()),
+    Decode("callf",     ("Ap"), ()),
+    Decode("wait",      (), ()),
+    Decode("pushf",     ("Fv"), ()),
+    Decode("popf",      ("Fv"), ()),
+    Decode("sahf",      (), ()),
+    Decode("lahf",      (), ()),
     # A0
-    Insn("mov",     ("al", "Ob"), ()),
-    Insn("mov",     ("?ax", "Ov"), ("allow66")),
-    Insn("mov",     ("Ob", "al"), ()),
-    Insn("mov",     ("Ov", "?ax"), ("allow66")),
-    Insn("movs",    ("Yb", "Xb"), ()),
-    Insn("movs",    ("Yv", "Xv"), ("allow66")),
-    Insn("cmps",    ("Xb", "Yb"), ()),
-    Insn("cmps",    ("Xv", "Yv"), ("allow66")),
+    Decode("mov",       ("al", "Ob"), ()),
+    Decode("mov",       ("?ax", "Ov"), ("allow66")),
+    Decode("mov",       ("Ob", "al"), ()),
+    Decode("mov",       ("Ov", "?ax"), ("allow66")),
+    Decode("movs",      ("Yb", "Xb"), ()),
+    Decode("movs",      ("Yv", "Xv"), ("allow66")),
+    Decode("cmps",      ("Xb", "Yb"), ()),
+    Decode("cmps",      ("Xv", "Yv"), ("allow66")),
     # A8
-    Insn("test",    ("al", "Ib"), ()),
-    Insn("test",    ("?ax", "Iz"), ("allow66")),
-    Insn("stos",    ("Yb", "al"), ()),
-    Insn("stos",    ("Yv", "?ax"), ("allow66")),
-    Insn("lods",    ("al", "Xb"), ()),
-    Insn("lods",    ("?ax", "Xv"), ("allow66")),
-    Insn("scas",    ("al", "Xb"), ()),
-    Insn("scas",    ("?ax", "Xv"), ("allow66")),
+    Decode("test",      ("al", "Ib"), ()),
+    Decode("test",      ("?ax", "Iz"), ("allow66")),
+    Decode("stos",      ("Yb", "al"), ()),
+    Decode("stos",      ("Yv", "?ax"), ("allow66")),
+    Decode("lods",      ("al", "Xb"), ()),
+    Decode("lods",      ("?ax", "Xv"), ("allow66")),
+    Decode("scas",      ("al", "Xb"), ()),
+    Decode("scas",      ("?ax", "Xv"), ("allow66")),
     # B0(
-    Insn("mov",     ("al", "Ib"), ()),
-    Insn("mov",     ("cl", "Ib"), ()),
-    Insn("mov",     ("dl", "Ib"), ()),
-    Insn("mov",     ("bl", "Ib"), ()),
-    Insn("mov",     ("ah", "Ib"), ()),
-    Insn("mov",     ("ch", "Ib"), ()),
-    Insn("mov",     ("dh", "Ib"), ()),
-    Insn("mov",     ("bh", "Ib"), ()),
+    Decode("mov",       ("al", "Ib"), ()),
+    Decode("mov",       ("cl", "Ib"), ()),
+    Decode("mov",       ("dl", "Ib"), ()),
+    Decode("mov",       ("bl", "Ib"), ()),
+    Decode("mov",       ("ah", "Ib"), ()),
+    Decode("mov",       ("ch", "Ib"), ()),
+    Decode("mov",       ("dh", "Ib"), ()),
+    Decode("mov",       ("bh", "Ib"), ()),
     # B8
-    Insn("mov",     ("?ax", "Iv"), ("allow66")),
-    Insn("mov",     ("?cx", "Iv"), ("allow66")),
-    Insn("mov",     ("?dx", "Iv"), ("allow66")),
-    Insn("mov",     ("?bx", "Iv"), ("allow66")),
-    Insn("mov",     ("?sp", "Iv"), ("allow66")),
-    Insn("mov",     ("?bp", "Iv"), ("allow66")),
-    Insn("mov",     ("?si", "Iv"), ("allow66")),
-    Insn("mov",     ("?di", "Iv"), ("allow66")),
+    Decode("mov",       ("?ax", "Iv"), ("allow66")),
+    Decode("mov",       ("?cx", "Iv"), ("allow66")),
+    Decode("mov",       ("?dx", "Iv"), ("allow66")),
+    Decode("mov",       ("?bx", "Iv"), ("allow66")),
+    Decode("mov",       ("?sp", "Iv"), ("allow66")),
+    Decode("mov",       ("?bp", "Iv"), ("allow66")),
+    Decode("mov",       ("?si", "Iv"), ("allow66")),
+    Decode("mov",       ("?di", "Iv"), ("allow66")),
     # C0
     None, # ModRM opcode group 2
     None, # ModRM opcode group 2
-    Insn("retn",    ("Iw"), ()),
-    Insn("retn",    (), ()),
-    Insn("les",     ("Gz", "Mp"), ("allow66")),
-    Insn("lds",     ("Gz", "Mp"), ("allow66")),
+    Decode("retn",      ("Iw"), ()),
+    Decode("retn",      (), ()),
+    Decode("les",       ("Gz", "Mp"), ("allow66")),
+    Decode("lds",       ("Gz", "Mp"), ("allow66")),
     None, # ModRM opcode group 11
     None, # ModRM opcode group 11
     # C8
-    Insn("enter",   ("Iw", "Ib"), ()),
-    Insn("leave",   (), ()),
-    Insn("retf",    ("Iw"), ()),
-    Insn("retf",    (), ()),
-    Insn("int3",    (), ()),
-    Insn("int",     ("Ib"), ()),
-    Insn("into",    (), ()),
-    Insn("iret",    (), ()),
+    Decode("enter",     ("Iw", "Ib"), ()),
+    Decode("leave",     (), ()),
+    Decode("retf",      ("Iw"), ()),
+    Decode("retf",      (), ()),
+    Decode("int3",      (), ()),
+    Decode("int",       ("Ib"), ()),
+    Decode("into",      (), ()),
+    Decode("iret",      (), ()),
     # D0
     None, # ModRM opcode group 2
     None, # ModRM opcode group 2
     None, # ModRM opcode group 2
     None, # ModRM opcode group 2
-    Insn("aam",     ("Ib"), ()),
-    Insn("aad",     ("Ib"), ()),
+    Decode("aam",       ("Ib"), ()),
+    Decode("aad",       ("Ib"), ()),
     _invalidOpcode,
-    Insn("xlat",    (), ()),
+    Decode("xlat",      (), ()),
     # D8
     None, # FPU escape
     None, # FPU escape
@@ -897,39 +959,44 @@ decode_main_32 = SwitchOpcode(
     None, # FPU escape
     None, # FPU escape
     # E0
-    Insn("loopnz",  ("Jb"), ()),
-    Insn("loopz",   ("Jb"), ()),
-    Insn("loop",    ("Jb"), ()),
-    Insn("jcxz",    ("Jb"), ()),
-    Insn("in",      ("al", "Ib"), ()),
-    Insn("in",      ("?ax", "Ib"), ("allow66")),
-    Insn("out",     ("Ib", "al"), ()),
-    Insn("out",     ("Ib", "?ax"), ("allow66")),
+    Decode("loopnz",    ("Jb"), ()),
+    Decode("loopz",     ("Jb"), ()),
+    Decode("loop",      ("Jb"), ()),
+    Decode("jcxz",      ("Jb"), ()),
+    Decode("in",        ("al", "Ib"), ()),
+    Decode("in",        ("?ax", "Ib"), ("allow66")),
+    Decode("out",       ("Ib", "al"), ()),
+    Decode("out",       ("Ib", "?ax"), ("allow66")),
     # E8
-    Insn("call",    ("Jz"), ()),
-    Insn("jmp",     ("Jz"), ()),
-    Insn("jmp",     ("Ap"), ()),
-    Insn("jmp",     ("Jb"), ()),
-    Insn("in",      ("al", "dx"), ()),
-    Insn("in",      ("?ax", "dx"), ("allow66")),
-    Insn("out",     ("dx", "al"), ()),
-    Insn("out",     ("dx", "?ax"), ("allow66")),
+    Decode("call",      ("Jz"), ()),
+    Decode("jmp",       ("Jz"), ()),
+    Decode("jmp",       ("Ap"), ()),
+    Decode("jmp",       ("Jb"), ()),
+    Decode("in",        ("al", "dx"), ()),
+    Decode("in",        ("?ax", "dx"), ("allow66")),
+    Decode("out",       ("dx", "al"), ()),
+    Decode("out",       ("dx", "?ax"), ("allow66")),
     # F0
     None, # LOCK prefix
     _invalidOpcode,
     None, # REPNE prefix
     None, # REPE prefix
-    Insn("hlt",     (), ()),
-    Insn("cmc",     (), ()),
+    Decode("hlt",       (), ()),
+    Decode("cmc",       (), ()),
     None, # ModRM opcode group 3
     None, # ModRM opcode group 3
     # F8
-    Insn("clc",     (), ()),
-    Insn("stc",     (), ()),
-    Insn("cli",     (), ()),
-    Insn("sti",     (), ()),
-    Insn("cld",     (), ()),
-    Insn("std",     (), ()),
+    Decode("clc",       (), ()),
+    Decode("stc",       (), ()),
+    Decode("cli",       (), ()),
+    Decode("sti",       (), ()),
+    Decode("cld",       (), ()),
+    Decode("std",       (), ()),
     None, # ModRM opcode group 4
-    None) # ModRM opcode group 5
+    None)) # ModRM opcode group 5
 #
+
+r = StringReader("\x8b\x4c\x24\x08")
+s = State(r)
+i = s.decode()
+print i
