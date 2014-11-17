@@ -41,26 +41,25 @@ _opwidth_bits = (
     48)
 
 class Immediate:
-    def __init__(self, value, size):
+    def __init__(self, value, size, signed=False):
         self.size = size # Data width, bits
-        self.value = long(value)
+        self._bits = long(value)
+        self.signed = signed
+    def get_value(self):
+        if self.signed:
+            return self.as_signed()
+        return self.as_unsigned()
     def as_signed(self):
-        bits = _opwidth_bits[self.size]
-        if (self.value & (1 << (bits - 1))) != 0 :
-            return -((~self.value + 1) & ((1 << bits) - 1))
-        return self.value
+        width = _opwidth_bits[self.size]
+        sign_bit = 1 << (width - 1)
+        mask = (1 << width) - 1
+        if (self._bits & sign_bit) != 0:
+            return -((~self._bits & mask) + 1)
+        return self._bits
     def as_unsigned(self):
-        return self.value
+        return self._bits
     def __str__(self):
-        if self.size == OPW_8BIT:
-            return '%02x' % (self.value % 0xFFL)
-        if self.size == OPW_16BIT:
-            return '%04x' % (self.value % 0xFFFFL)
-        if self.size == OPW_32BIT:
-            return '%08x' % (self.value % 0xFFFFFFFFL)
-        if self.size == OPW_64BIT:
-            return '%16x' % (self.value % 0xFFFFFFFFFFFFFFFFL)
-        return str(self.value)
+        return str(self.get_value())
 #
 class MemoryRef:
     def __init__(self, size, base=None, index=None, scale=1, displ=None, seg=None):
@@ -71,17 +70,36 @@ class MemoryRef:
         self.displ = displ
         self.seg = seg
     def __str__(self):
-        args = []
+        addr = None
         if self.base is not None:
-            args.append(str(self.base))
-        if self.displ is not None:
-            args.append(str(self.displ))
+            addr = str(self.base)
         if self.index is not None:
-            args.append('%s*%d' % (self.index, self.scale))
+            index = '%s*%d' % (self.index, self.scale)
+            if addr is None:
+                addr = index
+            else:
+                addr += '+' + index
+        if self.displ is not None:
+            displ = self.displ.get_value()
+            negative = displ < 0
+            if negative:
+                displ = -displ
+            fmt = '%%0%dx' % (_opwidth_bits[self.displ.size] >> 2)
+            displ = fmt % displ
+            if addr is None:
+                if negative:
+                    addr = '-' + displ
+                else:
+                    addr = displ
+            else:
+                if negative:
+                    addr += '-' + displ
+                else:
+                    addr += '+' + displ
         return '%s %s:[%s]' % (
             _opwidth_names[self.size],
             self.seg if self.seg is not None else 'ds',
-            '+'.join(args))
+            addr)
 #
 class Register:
     def __init__(self, name, size):
@@ -165,15 +183,6 @@ _rdebug_decode = (
 _rcontrol_decode = (
     _register_map["cr0"], None, _register_map["cr2"], _register_map["cr3"],
     _register_map["cr4"], None, None, None)
-
-class StringReader:
-    def __init__(self, data):
-        self.data = data
-        self.offset = 0
-    def read(self):
-        b = ord(self.data[self.offset])
-        self.offset += 1
-        return b
 
 class State:
     def __init__(self, reader):
@@ -441,7 +450,7 @@ def _decode_E_mem(state, size):
             if seg is None:
                 seg = l[1]
     if d_size is not None:
-        d = Immediate(state.fetch_mp(d_size), d_size)
+        d = Immediate(state.fetch_mp(d_size), d_size, signed=True)
     return MemoryRef(size, base=b, index=i, scale=s, displ=d, seg=seg)
 def _decode_E_(state, size):
     if state.modrm_mod == 3:
@@ -484,13 +493,11 @@ def _decode_Rd(state):
     if state.modrm_mod != 3:
         raise InvalidOpcodeError()
     return _r32_decode[state.modrm_rm]
-
 def _decode_Cd(state):
     r = _rcontrol_decode[state.modrm_reg]
     if r is None:
         raise InvalidOpcodeError()
     return r
-
 def _decode_Dd(state):
     r = _rdebug_decode[state.modrm_reg]
     if r is None:
@@ -498,11 +505,11 @@ def _decode_Dd(state):
     return r
 
 def _decode_Jb(state):
-    return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT)
+    return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT, signed=True)
 def _decode_Jz(state):
     if state.operand_width == OPW_16BIT:
-        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
-    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT)
+        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT, signed=True)
+    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT, signed=True)
 
 def _decode_Ib(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT)
@@ -560,7 +567,6 @@ class Decode:
     
     def __init__(self, mnemonic, operands, flags):
         self.mnemonic = mnemonic
-        self.op_spec = operands
         self.flags = flags
         self.modrm_needed = False
         op_list = []
