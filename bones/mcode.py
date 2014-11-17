@@ -209,9 +209,6 @@ class State:
         self.prefix_F2 = False # REPNE
         self.prefix_F3 = False # REPE
         
-    def decode(self):
-        self.handler = decode_main_32
-        return self.handler(self)
     def fetch_opcode(self):
         b = self.reader.read()
         self.opcode += chr(b)
@@ -454,7 +451,7 @@ def _decode_E_mem(state, size):
     return MemoryRef(size, base=b, index=i, scale=s, displ=d, seg=seg)
 def _decode_E_(state, size):
     if state.modrm_mod == 3:
-        return _gpr_decode[size][state.modrm_reg]
+        return _gpr_decode[size][state.modrm_rm]
     return _decode_E_mem(state, size)
 def _decode_Eb(state):
     return _decode_E_(state, OPW_8BIT)
@@ -556,9 +553,9 @@ def _decode_Ov(state):
     raise InvalidOpcodeError()
 
 def _decode_reg(which, state):
-    if which == '?':
+    if which[0] == '?':
         # Can choose based on current operand size
-        which = ('', 'e', 'r')[state.operand_width] + which[1:]
+        which = ('', 'e', 'r')[state.operand_width - 1] + which[1:]
     return _register_map[which]
 
 class Decode:
@@ -602,12 +599,11 @@ class Decode:
         
         if self.modrm_needed:
             state.fetch_modrm()
-        
-        # Check and fetch SIB
-        # NOTE: Can't be preprocessed.
-        sib_needed = state.address_width == OPW_32BIT and state.modrm_mod != 3 and state.modrm_rm == 4
-        if sib_needed:
-            state.fetch_sib()
+            # Check and fetch SIB
+            # NOTE: Can't be preprocessed.
+            sib_needed = state.address_width == OPW_32BIT and state.modrm_mod != 3 and state.modrm_rm == 4
+            if sib_needed:
+                state.fetch_sib()
             
         # NOTE: Displacement comes before any immediate operands
         # It would be a problem for e.g. ("Iz", "Ev") or somesuch
@@ -616,12 +612,14 @@ class Decode:
         for handler in self.op_list:
             decoded_ops.append(handler(state))
             
-        return Insn(self.mnemonic, decoded_ops)
+        return Insn(self.mnemonic, decoded_ops, state.opcode, state.opcode_hex)
     
 class Insn:
-    def __init__(self, mnemonic, operands):
+    def __init__(self, mnemonic, operands, opcode, opcode_hex):
         self.mnemonic = mnemonic
         self.operands = operands
+        self.opcode = opcode
+        self.opcode_hex = opcode_hex
     def __str__(self):
         ops_str = ', '.join(map(str, self.operands))
         return '%s %s' % (self.mnemonic, ops_str)
@@ -1284,3 +1282,7 @@ decode_main_32 = SwitchOpcode((
     decode_FE_32, # ModRM opcode group 4
     decode_FF_32)) # ModRM opcode group 5
 #
+
+def decode(state):
+    state.handler = decode_main_32
+    return state.handler(state)

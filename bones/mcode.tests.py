@@ -10,13 +10,10 @@ class StringReader:
         return b
 
 def decode(opcode):
-    reader = StringReader(opcode)
-    state = mcode.State(reader)
-    insn = state.decode()
-    return insn
+    return mcode.decode(mcode.State(StringReader(opcode)))
 
-# add byte ds:[si*1-0001], al
-print decode("\x67\x00\x44\x7f")
+# add byte es:[si*1+7f], al
+print decode("\x26\x67\x00\x44\x7f")
 # add byte ds:[si*1-0001], al
 print decode("\x67\x00\x84\xff\xff")
 

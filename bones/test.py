@@ -43,13 +43,17 @@ class TestDebugger(bones.Debugger):
         print "[%05d/%05d] Exception caught (%s-chance)." % (t.process.id, t.id, "first" if first_chance else "second")
         print str(info)
         try:
+            c = 0
             reader = MemReader(t.process, info.address)
-            decoder_state = mcode.State(reader)
-            insn = decoder_state.decode()
-            print '%08x %s %s' % (info.address, decoder_state.opcode_hex, insn)
+            while c < 4:
+                addr = reader.address
+                insn = mcode.decode(mcode.State(reader))
+                print '%08x %-20s %s' % (addr, insn.opcode_hex, insn)
+                if insn.mnemonic in ('retn', 'retf'):
+                    break
+                c += 1
         except Exception, e:
-            print e
-            print '%08x %s ???'% (info.address, decoder_state.opcode_hex)
+            raise
 
     def on_breakpoint(self, t):
         print "[%05d/%05d] Breakpoint hit." % (t.process.id, t.id)
