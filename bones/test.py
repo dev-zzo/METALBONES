@@ -1,4 +1,14 @@
 import bones
+import mcode
+
+class MemReader:
+    def __init__(self, process, address):
+        self.process = process
+        self.address = address
+    def read(self):
+        b = ord(self.process.read_memory(self.address, 1))
+        self.address += 1
+        return b
 
 class TestDebugger(bones.Debugger):
     def __init__(self):
@@ -32,6 +42,14 @@ class TestDebugger(bones.Debugger):
     def on_exception(self, t, info, first_chance):
         print "[%05d/%05d] Exception caught (%s-chance)." % (t.process.id, t.id, "first" if first_chance else "second")
         print str(info)
+        try:
+            reader = MemReader(t.process, info.address)
+            decoder_state = mcode.State(reader)
+            insn = decoder_state.decode()
+            print '%08x %s %s' % (info.address, decoder_state.opcode_hex, insn)
+        except Exception, e:
+            print e
+            print '%08x %s ???'% (info.address, decoder_state.opcode_hex)
 
     def on_breakpoint(self, t):
         print "[%05d/%05d] Breakpoint hit." % (t.process.id, t.id)
@@ -42,7 +60,7 @@ class TestDebugger(bones.Debugger):
 
 d = TestDebugger()
 
-d.spawn('victim.exe 3')
+d.spawn('victim.exe 2')
 
 while not d.done:
     if not d.wait_event(1000):
