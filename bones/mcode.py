@@ -599,7 +599,7 @@ class Decode:
         self.op_list = op_list
         for op in operands:
             amode = op[0]
-            if amode in "CDEGMNOPQRSUVW":
+            if amode in "CDEGMNPQRSUVW":
                 self.modrm_needed = True
             if amode.isupper():
                 op_list.append(sys.modules[Decode.__module__].__dict__['_decode_' + op])
