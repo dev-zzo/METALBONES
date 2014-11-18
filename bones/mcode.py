@@ -499,6 +499,8 @@ def _decode_Jz(state):
 
 def _decode_Ib(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT)
+def _decode_Isb(state):
+    return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT, signed=True)
 def _decode_Iw(state):
     return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
 def _decode_Iv(state):
@@ -669,7 +671,7 @@ decode_81_32 = SwitchModRMReg((
     Decode("xor",       ("Ev", "Iz"), ()),
     Decode("cmp",       ("Ev", "Iz"), ())
     ))
-decode_82_32 = SwitchModRMReg(( # Sign-extend the Ib
+decode_82_32 = SwitchModRMReg((
     Decode("add",       ("Eb", "Ib"), ()),
     Decode("or",        ("Eb", "Ib"), ()),
     Decode("adc",       ("Eb", "Ib"), ()),
@@ -679,15 +681,15 @@ decode_82_32 = SwitchModRMReg(( # Sign-extend the Ib
     Decode("xor",       ("Eb", "Ib"), ()),
     Decode("cmp",       ("Eb", "Ib"), ())
     ))
-decode_83_32 = SwitchModRMReg((
-    Decode("add",       ("Ev", "Ib"), ()),
-    Decode("or",        ("Ev", "Ib"), ()),
-    Decode("adc",       ("Ev", "Ib"), ()),
-    Decode("sbb",       ("Ev", "Ib"), ()),
-    Decode("and",       ("Ev", "Ib"), ()),
-    Decode("sub",       ("Ev", "Ib"), ()),
-    Decode("xor",       ("Ev", "Ib"), ()),
-    Decode("cmp",       ("Ev", "Ib"), ())
+decode_83_32 = SwitchModRMReg(( # Sign-extend the Ib
+    Decode("add",       ("Ev", "Isb"), ()),
+    Decode("or",        ("Ev", "Isb"), ()),
+    Decode("adc",       ("Ev", "Isb"), ()),
+    Decode("sbb",       ("Ev", "Isb"), ()),
+    Decode("and",       ("Ev", "Isb"), ()),
+    Decode("sub",       ("Ev", "Isb"), ()),
+    Decode("xor",       ("Ev", "Isb"), ()),
+    Decode("cmp",       ("Ev", "Isb"), ())
     ))
 # Group 1A
 decode_8F_32 = SwitchModRMReg((
