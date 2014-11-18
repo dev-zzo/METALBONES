@@ -575,7 +575,10 @@ def _decode_Sw(state):
 
 def _decode_O_(state, size):
     d = Immediate(state.fetch_mp(state.address_width), state.address_width)
-    return MemoryRef(size, displ=d, seg=_register_map['ds'])
+    seg = state.seg_override
+    if seg is None:
+        seg = _register_map['ds']
+    return MemoryRef(size, displ=d, seg=seg)
 def _decode_Ob(state):
     return _decode_O_(state, OPW_8BIT)
 def _decode_Ov(state):
