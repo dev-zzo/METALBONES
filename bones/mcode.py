@@ -637,8 +637,12 @@ class Decode:
         decoded_ops = []
         for handler in self.op_list:
             decoded_ops.append(handler(state))
-            
-        return Insn(self.mnemonic, decoded_ops, state.opcode, state.opcode_hex)
+        
+        insn = Insn(self.mnemonic, decoded_ops, state.opcode, state.opcode_hex)
+        insn.prefix_F0 = state.prefix_F0
+        insn.prefix_F2 = state.prefix_F2
+        insn.prefix_F3 = state.prefix_F3
+        return insn
     
 class Insn:
     def __init__(self, mnemonic, operands, opcode, opcode_hex):
@@ -646,6 +650,9 @@ class Insn:
         self.operands = operands
         self.opcode = opcode
         self.opcode_hex = opcode_hex
+        self.prefix_F0 = False
+        self.prefix_F2 = False
+        self.prefix_F3 = False
     def __str__(self):
         return '%s %s' % (self.mnemonic, str(self.operands))
 #
@@ -1319,7 +1326,16 @@ class Printer:
         for op in insn.operands:
             ops.append(self._print_op(op))
         fmt = '%%-%ds %%s' % insn_width
-        return fmt % (insn.mnemonic, ', '.join(ops))
+        mnem_list = []
+        if insn.prefix_F0:
+            mnem_list.append('lock')
+        if insn.prefix_F2:
+            mnem_list.append('repne')
+        if insn.prefix_F3:
+            mnem_list.append('repe')
+        mnem_list.append(insn.mnemonic)
+        mnemonic = ' '.join(mnem_list)
+        return fmt % (mnemonic, ', '.join(ops))
     def _print_op(self, op):
         if isinstance(op, Immediate):
             return self._print_imm(op)
