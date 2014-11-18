@@ -24,6 +24,8 @@ class TestDebugger(bones.Debugger):
 
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)
+        print str(t.context)
+        t.set_single_step()
 
     def on_thread_exit(self, t):
         print "[%05d/%05d] Thread exited, status %08x." % (t.process.id, t.id, t.exit_status)
@@ -34,7 +36,7 @@ class TestDebugger(bones.Debugger):
         self.done = True
 
     def on_module_load(self, m):
-        print "[%05d] Module loaded at %08x+%08x:\n%s." % (m.process.id, m.base_address, m.mapped_size, m.path)
+        print "[%05d] Module loaded at %08x~%08x:\n%s." % (m.process.id, m.base_address, m.mapped_size, m.path)
 
     def on_module_unload(self, m):
         print "[%05d] Module unloaded at %08x." % (m.process.id, m.base_address)
@@ -45,10 +47,11 @@ class TestDebugger(bones.Debugger):
         try:
             c = 0
             reader = MemReader(t.process, info.address)
+            printer = mcode.Printer()
             while c < 4:
                 addr = reader.address
                 insn = mcode.decode(mcode.State(reader))
-                print '%08x %-20s %s' % (addr, insn.opcode_hex, insn)
+                print '%08x %-20s %s' % (addr, insn.opcode_hex, printer.print_insn(insn))
                 if insn.mnemonic in ('retn', 'retf'):
                     break
                 c += 1
@@ -56,10 +59,24 @@ class TestDebugger(bones.Debugger):
             raise
 
     def on_breakpoint(self, t):
+        return
         print "[%05d/%05d] Breakpoint hit." % (t.process.id, t.id)
         ctx = t.context
         print str(ctx)
         print "Location: %s" % (t.process.get_location_from_va(ctx.eip))
+    
+    def on_single_step(self, t):
+        print "[%05d/%05d] Single stepping" % (t.process.id, t.id)
+        ctx = t.context
+        #print str(ctx)
+        print self.format_insn_at(t.process, ctx.eip)
+        t.set_single_step()
+    
+    def format_insn_at(self, process, address):
+        reader = MemReader(process, address)
+        printer = mcode.Printer()
+        insn = mcode.decode(mcode.State(reader))
+        return '%08x %-20s %s' % (address, insn.opcode_hex, printer.print_insn(insn))
 #
 
 d = TestDebugger()

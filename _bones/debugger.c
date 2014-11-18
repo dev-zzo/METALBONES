@@ -245,14 +245,14 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgBreakpointStateChange:
-        DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
+        // DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
         cb_result = PyObject_CallMethod((PyObject *)self, "_on_breakpoint", "ii",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread);
         break;
 
     case DbgSingleStepStateChange:
-        DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
+        // DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
         cb_result = PyObject_CallMethod((PyObject *)self, "_on_single_step", "ii",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread);

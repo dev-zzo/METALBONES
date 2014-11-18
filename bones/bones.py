@@ -21,12 +21,12 @@ class Process(_bones.Process):
 class Thread(_bones.Thread):
     """An abstraction representing a thread within a debugged process."""
     
-    def enable_single_step(self):
+    def set_single_step(self):
         ctx = self.context
         ctx.eflags.tf = True
         self.context = ctx
 #
-    
+
 class Module(_bones.Module):
     """An abstraction representing a module within a debugged process."""
     
