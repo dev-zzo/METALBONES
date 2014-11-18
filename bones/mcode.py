@@ -1177,7 +1177,7 @@ decode_main_32 = SwitchOpcode((
     Decode("mov",       ("Gb", "Eb"), ()),
     Decode("mov",       ("Gv", "Ev"), ("allow66")),
     Decode("mov",       ("Ev", "Sw"), ("allow66")),
-    Decode("lea",       ("Ev", "Mv"), ("allow66")), # TBD, docs not clear
+    Decode("lea",       ("Gv", "Mv"), ("allow66")), # TBD, docs not clear
     Decode("mov",       ("Sw", "Ew"), ("allow66")),
     decode_8F_32, # ModRM opcode group 1A
     # 90
