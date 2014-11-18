@@ -504,7 +504,7 @@ def _decode_Isb(state):
 def _decode_Iw(state):
     return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
 def _decode_Iv(state):
-    return Immediate(state.fetch_mp(state.operand_size), state.operand_size)
+    return Immediate(state.fetch_mp(state.operand_width), state.operand_width)
 def _decode_Iz(state):
     if state.operand_width == OPW_16BIT:
         return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
