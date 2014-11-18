@@ -439,7 +439,9 @@ def _decode_E_mem(state, size):
             if seg is None:
                 seg = l[1]
     if d_size is not None:
-        d = Immediate(state.fetch_mp(d_size), d_size, signed=True)
+        # Vol 2A, Tables 2.1 and 2.2: 8-bit displacement is sign-extended.
+        d_signed = d_size == OPW_8BIT
+        d = Immediate(state.fetch_mp(d_size), d_size, signed=d_signed)
     return MemoryRef(size, base=b, index=i, scale=s, displ=d, seg=seg)
 def _decode_E_(state, size):
     if state.modrm_mod == 3:
