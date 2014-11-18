@@ -101,6 +101,13 @@ class MemoryRef:
             self.seg if self.seg is not None else 'ds',
             addr)
 #
+class Address:
+    def __init__(self, seg, offset):
+        self.segment = seg
+        self.offset = offset
+    def __str__(self):
+        pass
+#
 class Register:
     def __init__(self, name, size):
         self.size = size # Data width, bits
@@ -413,6 +420,15 @@ _gpr_decode = (
     _r32_decode,
     _r64_decode)
 
+def _decode_opsize_p(state):
+    if state.operand_width == OPW_16BIT:
+        return OPW_32BIT
+    if state.operand_width == OPW_32BIT:
+        return OPW_48BIT
+    if state.operand_width == OPW_64BIT:
+        return OPW_80BIT
+    raise InvalidOpcodeError()
+
 def _decode_E_mem(state, size):
     s = 1
     i = None
@@ -463,13 +479,8 @@ def _decode_Ey(state):
     # FIXME: 64-bit
     return _decode_E_(state, OPW_32BIT)
 def _decode_Ep(state):
-    if state.operand_width == OPW_16BIT:
-        return _decode_E_mem(state, OPW_32BIT)
-    if state.operand_width == OPW_32BIT:
-        return _decode_E_mem(state, OPW_48BIT)
-    if state.operand_width == OPW_64BIT:
-        return _decode_E_mem(state, OPW_80BIT)
-    raise InvalidOpcodeError()
+    opsize = _decode_opsize_p(state)
+    return _decode_E_(state, opsize)
 
 def _decode_Gb(state):
     return _r8_decode[state.modrm_reg]
@@ -520,37 +531,72 @@ def _decode_Iz(state):
     return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT)
 
 def _decode_Ap(state):
-    raise InvalidOpcodeError()
+    off = Immediate(state.fetch_mp(state.operand_width), state.operand_width)
+    seg = Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
+    return Address(seg, off)
+
 def _decode_Ma(state):
-    raise InvalidOpcodeError()
+    if state.modrm_mod == 3:
+        raise InvalidOpcodeError()
+    return _decode_E_mem(state, OPW_64BIT)
 def _decode_Mp(state):
-    raise InvalidOpcodeError()
+    if state.modrm_mod == 3:
+        raise InvalidOpcodeError()
+    opsize = _decode_opsize_p(state)
+    return _decode_E_mem(state, opsize)
 def _decode_Mv(state):
-    raise InvalidOpcodeError()
+    if state.modrm_mod == 3:
+        raise InvalidOpcodeError()
+    return _decode_E_mem(state, state.operand_width)
 
+_flags_lookup = (
+    None,
+    _register_map['flags'],
+    _register_map['eflags'],
+    _register_map['rflags'],
+    )
 def _decode_Fv(state):
-    raise InvalidOpcodeError()
+    return _flags_lookup[state.operand_width]
 
+def _decode_X_(state, size):
+    seg = state.seg_override
+    if seg is None:
+        seg = _register_map['ds']
+    index = _gpr_decode[state.address_width][6]
+    return MemoryRef(size, index=index, seg=seg)
 def _decode_Xb(state):
-    raise InvalidOpcodeError()
+    return _decode_X_(state, OPW_8BIT)
 def _decode_Xv(state):
-    raise InvalidOpcodeError()
+    return _decode_X_(state, state.operand_width)
 def _decode_Xz(state):
-    raise InvalidOpcodeError()
+    if state.operand_width == OPW_16BIT:
+        return _decode_X_(state, OPW_16BIT)
+    return _decode_X_(state, OPW_32BIT)
+def _decode_Y_(state, size):
+    seg = state.seg_override
+    if seg is None:
+        seg = _register_map['es']
+    index = _gpr_decode[state.address_width][7]
+    return MemoryRef(size, index=index, seg=seg)
 def _decode_Yb(state):
-    raise InvalidOpcodeError()
+    return _decode_Y_(state, OPW_8BIT)
 def _decode_Yv(state):
-    raise InvalidOpcodeError()
+    return _decode_Y_(state, state.operand_width)
 def _decode_Yz(state):
-    raise InvalidOpcodeError()
+    if state.operand_width == OPW_16BIT:
+        return _decode_Y_(state, OPW_16BIT)
+    return _decode_Y_(state, OPW_32BIT)
 
 def _decode_Sw(state):
-    raise InvalidOpcodeError()
+    return _rseg_decode[state.modrm_reg]
 
+def _decode_O_(state, size):
+    d = Immediate(state.fetch_mp(state.address_width), state.address_width)
+    return MemoryRef(size, displ=d, seg=_register_map['ds'])
 def _decode_Ob(state):
-    raise InvalidOpcodeError()
+    return _decode_O_(state, OPW_8BIT)
 def _decode_Ov(state):
-    raise InvalidOpcodeError()
+    return _decode_O_(state, state.operand_width)
 
 def _decode_reg(which, state):
     if which[0] == '?':
