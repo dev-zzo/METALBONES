@@ -12,8 +12,9 @@ class StringReader:
 def decode(opcode):
     return mcode.decode(mcode.State(StringReader(opcode)))
 
+p = mcode.Printer()
 # add byte es:[si*1+7f], al
-print decode("\x26\x67\x00\x44\x7f")
+print p.print_insn(decode("\x26\x67\x00\x44\x7f"))
 # add byte ds:[si*1-0001], al
-print decode("\x67\x00\x84\xff\xff")
+print p.print_insn(decode("\x67\x00\x84\xff\xff"))
 

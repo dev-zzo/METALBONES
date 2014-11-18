@@ -59,7 +59,12 @@ class Immediate:
     def as_unsigned(self):
         return self._bits
     def __str__(self):
-        return str(self.get_value())
+        fmt = '%%0%dx' % (_opwidth_bits[self.size] >> 2)
+        value = self.get_value()
+        if value < 0:
+            value = -value
+            fmt = '-' + fmt
+        return fmt % value
 #
 class MemoryRef:
     def __init__(self, size, base=None, index=None, scale=1, displ=None, seg=None):
@@ -70,43 +75,14 @@ class MemoryRef:
         self.displ = displ
         self.seg = seg
     def __str__(self):
-        addr = None
-        if self.base is not None:
-            addr = str(self.base)
-        if self.index is not None:
-            index = '%s*%d' % (self.index, self.scale)
-            if addr is None:
-                addr = index
-            else:
-                addr += '+' + index
-        if self.displ is not None:
-            displ = self.displ.get_value()
-            negative = displ < 0
-            if negative:
-                displ = -displ
-            fmt = '%%0%dx' % (_opwidth_bits[self.displ.size] >> 2)
-            displ = fmt % displ
-            if addr is None:
-                if negative:
-                    addr = '-' + displ
-                else:
-                    addr = displ
-            else:
-                if negative:
-                    addr += '-' + displ
-                else:
-                    addr += '+' + displ
-        return '%s %s:[%s]' % (
-            _opwidth_names[self.size],
-            self.seg if self.seg is not None else 'ds',
-            addr)
+        return 'Base: %s Index: %s Scale: %s Displacement: %s' % (self.base, self.index, self.scale, self.displ)
 #
 class Address:
-    def __init__(self, seg, offset):
-        self.segment = seg
-        self.offset = offset
+    def __init__(self, seg, off):
+        self.seg = seg
+        self.off = off
     def __str__(self):
-        pass
+        return 'Segment: %s Offset: %s' % (self.seg, self.off)
 #
 class Register:
     def __init__(self, name, size):
@@ -516,8 +492,8 @@ def _decode_Jb(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT, signed=True)
 def _decode_Jz(state):
     if state.operand_width == OPW_16BIT:
-        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT, signed=True)
-    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT, signed=True)
+        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
+    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT)
 
 def _decode_Ib(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT)
@@ -667,8 +643,7 @@ class Insn:
         self.opcode = opcode
         self.opcode_hex = opcode_hex
     def __str__(self):
-        ops_str = ', '.join(map(str, self.operands))
-        return '%s %s' % (self.mnemonic, ops_str)
+        return '%s %s' % (self.mnemonic, str(self.operands))
 #
 
 # Group 1
@@ -692,7 +667,7 @@ decode_81_32 = SwitchModRMReg((
     Decode("xor",       ("Ev", "Iz"), ()),
     Decode("cmp",       ("Ev", "Iz"), ())
     ))
-decode_82_32 = SwitchModRMReg(( # Hmm...
+decode_82_32 = SwitchModRMReg(( # Sign-extend the Ib
     Decode("add",       ("Eb", "Ib"), ()),
     Decode("or",        ("Eb", "Ib"), ()),
     Decode("adc",       ("Eb", "Ib"), ()),
@@ -1332,3 +1307,49 @@ decode_main_32 = SwitchOpcode((
 def decode(state):
     state.handler = decode_main_32
     return state.handler(state)
+
+class Printer:
+    """Pretty print the insn"""
+    def print_insn(self, insn, insn_width=10):
+        ops = []
+        for op in insn.operands:
+            ops.append(self._print_op(op))
+        fmt = '%%-%ds %%s' % insn_width
+        return fmt % (insn.mnemonic, ', '.join(ops))
+    def _print_op(self, op):
+        if isinstance(op, Immediate):
+            return self._print_imm(op)
+        if isinstance(op, MemoryRef):
+            return self._print_memref(op)
+        if isinstance(op, Address):
+            return self._print_addr(op)
+        if isinstance(op, Register):
+            return self._print_reg(op)
+        raise Exception("I don't know how to print this.")
+    def _print_imm(self, op):
+        return str(op)
+    def _print_memref(self, op):
+        addr = None
+        if op.base is not None:
+            addr = self._print_reg(op.base)
+        if op.index is not None:
+            index = '%s*%d' % (self._print_reg(op.index), op.scale)
+            if addr is None:
+                addr = index
+            else:
+                addr += '+' + index
+        if op.displ is not None:
+            displ = self._print_imm(op.displ)
+            if addr is None:
+                addr = displ
+            else:
+                if displ[0] == '-':
+                    addr += displ
+                else:
+                    addr += '+' + displ
+        return '%s %s:[%s]' % (_opwidth_names[op.size], self._print_reg(op.seg), addr)
+    def _print_addr(self, op):
+        return '%s:%s' % (op.seg, op.off)
+    def _print_reg(self, op):
+        return str(op)
+#
