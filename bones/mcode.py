@@ -61,9 +61,12 @@ class Immediate:
     def __str__(self):
         fmt = '%%0%dx' % (_opwidth_bits[self.size] >> 2)
         value = self.get_value()
-        if value < 0:
-            value = -value
-            fmt = '-' + fmt
+        if self.signed:
+            if value < 0:
+                value = -value
+                fmt = '-' + fmt
+            else:
+                fmt = '+' + fmt
         return fmt % value
 #
 class MemoryRef:
@@ -494,8 +497,8 @@ def _decode_Jb(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT, signed=True)
 def _decode_Jz(state):
     if state.operand_width == OPW_16BIT:
-        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT)
-    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT)
+        return Immediate(state.fetch_mp(OPW_16BIT), OPW_16BIT, signed=True)
+    return Immediate(state.fetch_mp(OPW_32BIT), OPW_32BIT, signed=True)
 
 def _decode_Ib(state):
     return Immediate(state.fetch_mp(OPW_8BIT), OPW_8BIT)
@@ -1363,10 +1366,10 @@ class Printer:
             if addr is None:
                 addr = displ
             else:
-                if displ[0] == '-':
-                    addr += displ
-                else:
+                if not op.displ.signed:
                     addr += '+' + displ
+                else:
+                    addr += displ
         return '%s %s:[%s]' % (_opwidth_names[op.size], self._print_reg(op.seg), addr)
     def _print_addr(self, op):
         return '%s:%s' % (op.seg, op.off)
