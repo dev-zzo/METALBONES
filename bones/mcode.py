@@ -147,6 +147,14 @@ _register_map = {
     "flags": Register("flags", OPW_16BIT),
     "eflags": Register("eflags", OPW_32BIT),
     "rflags": Register("rflags", OPW_64BIT),
+    "st(0)": Register("st(0)", OPW_80BIT),
+    "st(1)": Register("st(1)", OPW_80BIT),
+    "st(2)": Register("st(2)", OPW_80BIT),
+    "st(3)": Register("st(3)", OPW_80BIT),
+    "st(4)": Register("st(4)", OPW_80BIT),
+    "st(5)": Register("st(5)", OPW_80BIT),
+    "st(6)": Register("st(6)", OPW_80BIT),
+    "st(7)": Register("st(7)", OPW_80BIT),
     }
 _r8_decode = (
     _register_map["al"], _register_map["cl"], _register_map["dl"], _register_map["bl"],
@@ -169,7 +177,10 @@ _rdebug_decode = (
 _rcontrol_decode = (
     _register_map["cr0"], None, _register_map["cr2"], _register_map["cr3"],
     _register_map["cr4"], None, None, None)
-
+_rfpu_decode = (
+    _register_map["st(0)"], _register_map["st(1)"], _register_map["st(2)"], _register_map["st(3)"], 
+    _register_map["st(4)"], _register_map["st(5)"], _register_map["st(6)"], _register_map["st(7)"],
+    )
 class State:
     def __init__(self, reader):
         self.reader = reader
@@ -270,8 +281,6 @@ class SwitchOpcode:
         state.handler = self
         b = state.fetch_opcode()
         e = self.entries[b]
-        if e is None:
-            raise UnknownOpcodeError()
         return e(state)
 class SwitchPrefix:
     """Table switch based on insn prefix."""
@@ -306,8 +315,6 @@ class SwitchModRMMemRegOp:
     def __call__(self, state):
         state.fetch_modrm()
         e = self.entries[state.modrm_reg]
-        if e is None:
-            raise UnknownOpcodeError()
         return e(state)
 class SwitchModRMReg:
     def __init__(self, entries):
@@ -315,8 +322,17 @@ class SwitchModRMReg:
     def __call__(self, state):
         state.fetch_modrm()
         e = self.entries[state.modrm_reg]
-        if e is None:
-            raise UnknownOpcodeError()
+        return e(state)
+class SwitchModRMMod:
+    def __init__(self, mod_012, mod_3):
+        self.lower_tab = mod_012
+        self.upper_tab = mod_3
+    def __call__(self, state):
+        state.fetch_modrm()
+        if state.modrm_mod != 3:
+            e = self.lower_tab[state.modrm_reg]
+        else:
+            e = self.upper_tab[state.modrm_reg]
         return e(state)
 
 _modrm_lookup_16 = (
@@ -527,10 +543,18 @@ def _decode_Mp(state):
         raise InvalidOpcodeError()
     opsize = _decode_opsize_p(state)
     return _decode_E_mem(state, opsize)
+def _decode_Mw(state):
+    return _decode_E_mem(state, OPW_16BIT)
+def _decode_Md(state):
+    return _decode_E_mem(state, OPW_32BIT)
 def _decode_Mv(state):
     if state.modrm_mod == 3:
         raise InvalidOpcodeError()
     return _decode_E_mem(state, state.operand_width)
+def _decode_Mq(state):
+    return _decode_E_mem(state, OPW_64BIT)
+def _decode_Mt(state):
+    return _decode_E_mem(state, OPW_80BIT)
 
 _flags_lookup = (
     None,
@@ -584,72 +608,85 @@ def _decode_Ob(state):
 def _decode_Ov(state):
     return _decode_O_(state, state.operand_width)
 
+def _decode_Kt(state):
+    return _rfpu_decode[state.modrm_rm]
+    
 def _decode_reg(which, state):
     if which[0] == '?':
         # Can choose based on current operand size
         which = ('', 'e', 'r')[state.operand_width - 1] + which[1:]
     return _register_map[which]
 
-class Decode:
+class DecodeBase:
     # Map reg decoders to partials to conserve memory
     _reg_decoders = {}
     
-    def __init__(self, mnemonic, operands, flags):
+    def __init__(self, mnemonic, op_spec, flags):
         self.mnemonic = mnemonic
         self.flags = flags
-        self.modrm_needed = False
-        op_list = []
-        self.op_list = op_list
-        for op in operands:
-            amode = op[0]
-            if amode in "CDEGMNPQRSUVW":
-                self.modrm_needed = True
-            if amode.isupper():
-                op_list.append(sys.modules[Decode.__module__].__dict__['_decode_' + op])
-            else:
-                try:
-                    op_list.append(Decode._reg_decoders[op])
-                except KeyError:
-                    p = functools.partial(_decode_reg, op)
-                    Decode._reg_decoders[op] = p
-                    op_list.append(p)
-
+        self.op_list = self._prepare_operands(op_spec)
+        
     def __call__(self, state):
-        # General instruction structure is as follows
-        # Legacy prefices
-        # REX prefix
-        # Opcode
-        # ModR/M (if present)
-        # SIB (if present)
-        # Displacement (if required by ModR/M or SIB)
-        # Immediate
+        self._apply_prefices(state)
+        if self.modrm_needed:
+            state.fetch_modrm()
+            self._check_fetch_sib(state)
+        return self._decode(state)
 
+    def _prepare_operands(self, operands):
+        op_list = []
+        for op in operands:
+            op_list.append(self._prepare_operand(op))
+        return op_list
+    def _prepare_operand(self, op):
+        if op[0].isupper():
+            return sys.modules[Decode.__module__].__dict__['_decode_' + op]
+        else:
+            try:
+                return Decode._reg_decoders[op]
+            except KeyError:
+                p = functools.partial(_decode_reg, op)
+                Decode._reg_decoders[op] = p
+                return p
+    def _apply_prefices(self, state):
         if state.prefix_66:
             state.operand_width = OPW_16BIT if state.operand_width != OPW_16BIT else OPW_32BIT
         if state.prefix_67:
             state.address_width = OPW_16BIT if state.address_width != OPW_16BIT else OPW_32BIT
-        
-        if self.modrm_needed:
-            state.fetch_modrm()
-            # Check and fetch SIB
-            # NOTE: Can't be preprocessed.
-            sib_needed = state.address_width == OPW_32BIT and state.modrm_mod != 3 and state.modrm_rm == 4
-            if sib_needed:
-                state.fetch_sib()
-            
-        # NOTE: Displacement comes before any immediate operands
-        # It would be a problem for e.g. ("Iz", "Ev") or somesuch
-        # But no instructions seem to use such combo.
+    def _check_fetch_sib(self, state):
+        if state.address_width == OPW_32BIT and state.modrm_mod != 3 and state.modrm_rm == 4:
+            state.fetch_sib()
+    def _decode(self, state):
         decoded_ops = []
         for handler in self.op_list:
             decoded_ops.append(handler(state))
-        
         insn = Insn(self.mnemonic, decoded_ops, state.opcode, state.opcode_hex)
         insn.prefix_F0 = state.prefix_F0
         insn.prefix_F2 = state.prefix_F2
         insn.prefix_F3 = state.prefix_F3
         return insn
-    
+class Decode(DecodeBase):
+    """Decoder for generic instructions"""
+    def __init__(self, mnemonic, operands, flags):
+        self.modrm_needed = False
+        DecodeBase.__init__(self, mnemonic, operands, flags)
+    def __call__(self, state):
+        self._apply_prefices(state)
+        if self.modrm_needed:
+            state.fetch_modrm()
+            self._check_fetch_sib(state)
+        return self._decode(state)
+    def _prepare_operand(self, op):
+        if op[0] in "CDEGMNPQRSUVW":
+            self.modrm_needed = True
+        return DecodeBase._prepare_operand(self, op)
+class DecodeFPU(DecodeBase):
+    """Decoder for FPU instructions"""
+    def __call__(self, state):
+        self._apply_prefices(state)
+        self._check_fetch_sib(state)
+        return self._decode(state)
+
 class Insn:
     def __init__(self, mnemonic, operands, opcode, opcode_hex):
         self.mnemonic = mnemonic
@@ -665,48 +702,48 @@ class Insn:
 
 # Group 1
 decode_80_32 = SwitchModRMReg((
-    Decode("add",       ("Eb", "Ib"), ()),
-    Decode("or",        ("Eb", "Ib"), ()),
-    Decode("adc",       ("Eb", "Ib"), ()),
-    Decode("sbb",       ("Eb", "Ib"), ()),
-    Decode("and",       ("Eb", "Ib"), ()),
-    Decode("sub",       ("Eb", "Ib"), ()),
-    Decode("xor",       ("Eb", "Ib"), ()),
-    Decode("cmp",       ("Eb", "Ib"), ())
+    Decode('add',       ('Eb', 'Ib'), ()),
+    Decode('or',        ('Eb', 'Ib'), ()),
+    Decode('adc',       ('Eb', 'Ib'), ()),
+    Decode('sbb',       ('Eb', 'Ib'), ()),
+    Decode('and',       ('Eb', 'Ib'), ()),
+    Decode('sub',       ('Eb', 'Ib'), ()),
+    Decode('xor',       ('Eb', 'Ib'), ()),
+    Decode('cmp',       ('Eb', 'Ib'), ())
     ))
 decode_81_32 = SwitchModRMReg((
-    Decode("add",       ("Ev", "Iz"), ()),
-    Decode("or",        ("Ev", "Iz"), ()),
-    Decode("adc",       ("Ev", "Iz"), ()),
-    Decode("sbb",       ("Ev", "Iz"), ()),
-    Decode("and",       ("Ev", "Iz"), ()),
-    Decode("sub",       ("Ev", "Iz"), ()),
-    Decode("xor",       ("Ev", "Iz"), ()),
-    Decode("cmp",       ("Ev", "Iz"), ())
+    Decode('add',       ('Ev', 'Iz'), ()),
+    Decode('or',        ('Ev', 'Iz'), ()),
+    Decode('adc',       ('Ev', 'Iz'), ()),
+    Decode('sbb',       ('Ev', 'Iz'), ()),
+    Decode('and',       ('Ev', 'Iz'), ()),
+    Decode('sub',       ('Ev', 'Iz'), ()),
+    Decode('xor',       ('Ev', 'Iz'), ()),
+    Decode('cmp',       ('Ev', 'Iz'), ())
     ))
 decode_82_32 = SwitchModRMReg((
-    Decode("add",       ("Eb", "Ib"), ()),
-    Decode("or",        ("Eb", "Ib"), ()),
-    Decode("adc",       ("Eb", "Ib"), ()),
-    Decode("sbb",       ("Eb", "Ib"), ()),
-    Decode("and",       ("Eb", "Ib"), ()),
-    Decode("sub",       ("Eb", "Ib"), ()),
-    Decode("xor",       ("Eb", "Ib"), ()),
-    Decode("cmp",       ("Eb", "Ib"), ())
+    Decode('add',       ('Eb', 'Ib'), ()),
+    Decode('or',        ('Eb', 'Ib'), ()),
+    Decode('adc',       ('Eb', 'Ib'), ()),
+    Decode('sbb',       ('Eb', 'Ib'), ()),
+    Decode('and',       ('Eb', 'Ib'), ()),
+    Decode('sub',       ('Eb', 'Ib'), ()),
+    Decode('xor',       ('Eb', 'Ib'), ()),
+    Decode('cmp',       ('Eb', 'Ib'), ())
     ))
 decode_83_32 = SwitchModRMReg(( # Sign-extend the Ib
-    Decode("add",       ("Ev", "Isb"), ()),
-    Decode("or",        ("Ev", "Isb"), ()),
-    Decode("adc",       ("Ev", "Isb"), ()),
-    Decode("sbb",       ("Ev", "Isb"), ()),
-    Decode("and",       ("Ev", "Isb"), ()),
-    Decode("sub",       ("Ev", "Isb"), ()),
-    Decode("xor",       ("Ev", "Isb"), ()),
-    Decode("cmp",       ("Ev", "Isb"), ())
+    Decode('add',       ('Ev', 'Isb'), ()),
+    Decode('or',        ('Ev', 'Isb'), ()),
+    Decode('adc',       ('Ev', 'Isb'), ()),
+    Decode('sbb',       ('Ev', 'Isb'), ()),
+    Decode('and',       ('Ev', 'Isb'), ()),
+    Decode('sub',       ('Ev', 'Isb'), ()),
+    Decode('xor',       ('Ev', 'Isb'), ()),
+    Decode('cmp',       ('Ev', 'Isb'), ())
     ))
 # Group 1A
 decode_8F_32 = SwitchModRMReg((
-    Decode("pop",       ("Ev",), ()),
+    Decode('pop',       ('Ev',), ()),
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, 
@@ -714,138 +751,267 @@ decode_8F_32 = SwitchModRMReg((
     ))
 # Group 2
 decode_C0_32 = SwitchModRMReg((
-    Decode("rol",       ("Eb", "Ib"), ()),
-    Decode("ror",       ("Eb", "Ib"), ()),
-    Decode("rcl",       ("Eb", "Ib"), ()),
-    Decode("rcr",       ("Eb", "Ib"), ()),
-    Decode("shl",       ("Eb", "Ib"), ()),
-    Decode("shr",       ("Eb", "Ib"), ()),
+    Decode('rol',       ('Eb', 'Ib'), ()),
+    Decode('ror',       ('Eb', 'Ib'), ()),
+    Decode('rcl',       ('Eb', 'Ib'), ()),
+    Decode('rcr',       ('Eb', 'Ib'), ()),
+    Decode('shl',       ('Eb', 'Ib'), ()),
+    Decode('shr',       ('Eb', 'Ib'), ()),
     _invalidOpcode,
-    Decode("sar",       ("Eb", "Ib"), ())
+    Decode('sar',       ('Eb', 'Ib'), ())
     ))
 decode_C1_32 = SwitchModRMReg((
-    Decode("rol",       ("Ev", "Ib"), ()),
-    Decode("ror",       ("Ev", "Ib"), ()),
-    Decode("rcl",       ("Ev", "Ib"), ()),
-    Decode("rcr",       ("Ev", "Ib"), ()),
-    Decode("shl",       ("Ev", "Ib"), ()),
-    Decode("shr",       ("Ev", "Ib"), ()),
+    Decode('rol',       ('Ev', 'Ib'), ()),
+    Decode('ror',       ('Ev', 'Ib'), ()),
+    Decode('rcl',       ('Ev', 'Ib'), ()),
+    Decode('rcr',       ('Ev', 'Ib'), ()),
+    Decode('shl',       ('Ev', 'Ib'), ()),
+    Decode('shr',       ('Ev', 'Ib'), ()),
     _invalidOpcode,
-    Decode("sar",       ("Ev", "Ib"), ())
+    Decode('sar',       ('Ev', 'Ib'), ())
     ))
 decode_D0_32 = SwitchModRMReg((
-    Decode("rol",       ("Eb",), ()),
-    Decode("ror",       ("Eb",), ()),
-    Decode("rcl",       ("Eb",), ()),
-    Decode("rcr",       ("Eb",), ()),
-    Decode("shl",       ("Eb",), ()),
-    Decode("shr",       ("Eb",), ()),
+    Decode('rol',       ('Eb',), ()),
+    Decode('ror',       ('Eb',), ()),
+    Decode('rcl',       ('Eb',), ()),
+    Decode('rcr',       ('Eb',), ()),
+    Decode('shl',       ('Eb',), ()),
+    Decode('shr',       ('Eb',), ()),
     _invalidOpcode,
-    Decode("sar",       ("Eb",), ())
+    Decode('sar',       ('Eb',), ())
     ))
 decode_D1_32 = SwitchModRMReg((
-    Decode("rol",       ("Ev",), ()),
-    Decode("ror",       ("Ev",), ()),
-    Decode("rcl",       ("Ev",), ()),
-    Decode("rcr",       ("Ev",), ()),
-    Decode("shl",       ("Ev",), ()),
-    Decode("shr",       ("Ev",), ()),
+    Decode('rol',       ('Ev',), ()),
+    Decode('ror',       ('Ev',), ()),
+    Decode('rcl',       ('Ev',), ()),
+    Decode('rcr',       ('Ev',), ()),
+    Decode('shl',       ('Ev',), ()),
+    Decode('shr',       ('Ev',), ()),
     _invalidOpcode,
-    Decode("sar",       ("Ev",), ())
+    Decode('sar',       ('Ev',), ())
     ))
 decode_D2_32 = SwitchModRMReg((
-    Decode("rol",       ("Eb", "cl"), ()),
-    Decode("ror",       ("Eb", "cl"), ()),
-    Decode("rcl",       ("Eb", "cl"), ()),
-    Decode("rcr",       ("Eb", "cl"), ()),
-    Decode("shl",       ("Eb", "cl"), ()),
-    Decode("shr",       ("Eb", "cl"), ()),
+    Decode('rol',       ('Eb', 'cl'), ()),
+    Decode('ror',       ('Eb', 'cl'), ()),
+    Decode('rcl',       ('Eb', 'cl'), ()),
+    Decode('rcr',       ('Eb', 'cl'), ()),
+    Decode('shl',       ('Eb', 'cl'), ()),
+    Decode('shr',       ('Eb', 'cl'), ()),
     _invalidOpcode,
-    Decode("sar",       ("Eb", "cl"), ())
+    Decode('sar',       ('Eb', 'cl'), ())
     ))
 decode_D3_32 = SwitchModRMReg((
-    Decode("rol",       ("Ev", "cl"), ()),
-    Decode("ror",       ("Ev", "cl"), ()),
-    Decode("rcl",       ("Ev", "cl"), ()),
-    Decode("rcr",       ("Ev", "cl"), ()),
-    Decode("shl",       ("Ev", "cl"), ()),
-    Decode("shr",       ("Ev", "cl"), ()),
+    Decode('rol',       ('Ev', 'cl'), ()),
+    Decode('ror',       ('Ev', 'cl'), ()),
+    Decode('rcl',       ('Ev', 'cl'), ()),
+    Decode('rcr',       ('Ev', 'cl'), ()),
+    Decode('shl',       ('Ev', 'cl'), ()),
+    Decode('shr',       ('Ev', 'cl'), ()),
     _invalidOpcode,
-    Decode("sar",       ("Ev", "cl"), ())
+    Decode('sar',       ('Ev', 'cl'), ())
     ))
 # Group 3
 decode_F6_32 = SwitchModRMReg((
-    Decode("test",      ("Eb", "Ib"), ()),
+    Decode('test',      ('Eb', 'Ib'), ()),
     _invalidOpcode,
-    Decode("not",       ("Eb",), ()),
-    Decode("neg",       ("Eb",), ()),
-    Decode("mul",       ("Eb",), ()),
-    Decode("imul",      ("Eb",), ()),
-    Decode("div",       ("Eb",), ()),
-    Decode("idiv",      ("Eb",), ()),
+    Decode('not',       ('Eb',), ()),
+    Decode('neg',       ('Eb',), ()),
+    Decode('mul',       ('Eb',), ()),
+    Decode('imul',      ('Eb',), ()),
+    Decode('div',       ('Eb',), ()),
+    Decode('idiv',      ('Eb',), ()),
     ))
 decode_F7_32 = SwitchModRMReg((
-    Decode("test",      ("Ev", "Iz"), ()),
+    Decode('test',      ('Ev', 'Iz'), ()),
     _invalidOpcode,
-    Decode("not",       ("Ev",), ()),
-    Decode("neg",       ("Ev",), ()),
-    Decode("mul",       ("Ev",), ()),
-    Decode("imul",      ("Ev",), ()),
-    Decode("div",       ("Ev",), ()),
-    Decode("idiv",      ("Ev",), ()),
+    Decode('not',       ('Ev',), ()),
+    Decode('neg',       ('Ev',), ()),
+    Decode('mul',       ('Ev',), ()),
+    Decode('imul',      ('Ev',), ()),
+    Decode('div',       ('Ev',), ()),
+    Decode('idiv',      ('Ev',), ()),
     ))
 # Group 4
 decode_FE_32 = SwitchModRMReg((
-    Decode("inc",       ("Eb",), ()),
-    Decode("dec",       ("Eb",), ()),
+    Decode('inc',       ('Eb',), ()),
+    Decode('dec',       ('Eb',), ()),
     _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, 
     _invalidOpcode, _invalidOpcode
     ))
 # Group 5
 decode_FF_32 = SwitchModRMReg((
-    Decode("inc",       ("Ev",), ("allow66")),
-    Decode("dec",       ("Ev",), ("allow66")),
-    Decode("call",      ("Ev",), ()),
-    Decode("call",      ("Ep",), ()),
-    Decode("jmp",       ("Ev",), ()),
-    Decode("jmp",       ("Mp",), ()),
-    Decode("push",      ("Ev",), ("allow66")),
+    Decode('inc',       ('Ev',), ('allow66')),
+    Decode('dec',       ('Ev',), ('allow66')),
+    Decode('call',      ('Ev',), ()),
+    Decode('call',      ('Ep',), ()),
+    Decode('jmp',       ('Ev',), ()),
+    Decode('jmp',       ('Mp',), ()),
+    Decode('push',      ('Ev',), ('allow66')),
     _invalidOpcode
     ))
 # Group 11
 decode_C6_32 = SwitchModRMReg((
-    Decode("mov",       ("Eb", "Ib"), ()),
+    Decode('mov',       ('Eb', 'Ib'), ()),
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, 
     _invalidOpcode, _invalidOpcode
     ))
 decode_C7_32 = SwitchModRMReg((
-    Decode("mov",       ("Ev", "Iz"), ()),
+    Decode('mov',       ('Ev', 'Iz'), ()),
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, 
     _invalidOpcode, _invalidOpcode
     ))
 
+decode_D8 = SwitchModRMMod((
+    DecodeFPU('fadd',       ('Md',), ()),
+    DecodeFPU('fmul',       ('Md',), ()),
+    DecodeFPU('fcom',       ('Md',), ()),
+    DecodeFPU('fcomp',      ('Md',), ()),
+    DecodeFPU('fsub',       ('Md',), ()),
+    DecodeFPU('fsubr',      ('Md',), ()),
+    DecodeFPU('fdiv',       ('Md',), ()),
+    DecodeFPU('fdivr',      ('Md',), ()),
+    ), (
+    DecodeFPU('fadd',       ('st(0)', 'Kt',), ()),
+    DecodeFPU('fmul',       ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcom',       ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcomp',      ('st(0)', 'Kt',), ()),
+    DecodeFPU('fsub',       ('st(0)', 'Kt',), ()),
+    DecodeFPU('fsubr',      ('st(0)', 'Kt',), ()),
+    DecodeFPU('fdiv',       ('st(0)', 'Kt',), ()),
+    DecodeFPU('fdivr',      ('st(0)', 'Kt',), ()),
+    ))
+decode_D9 = SwitchModRMMod((
+    DecodeFPU('fld',        ('Md',), ()),
+    _invalidOpcode,
+    DecodeFPU('fst',        ('Md',), ()),
+    DecodeFPU('fstp',       ('Md',), ()),
+    DecodeFPU('fldenv',     ('Md',), ()), # 14/28 bytes
+    DecodeFPU('fldcw',      ('Mw',), ()),
+    DecodeFPU('fstenv',     ('Md',), ()), # 14/28 bytes
+    DecodeFPU('fstcw',      ('Mw',), ()),
+    ), (
+    DecodeFPU('fld',        ('st(0)', 'Kt',), ()),
+    DecodeFPU('fxch',       ('st(0)', 'Kt',), ()),
+    SwitchModRMReg((
+        DecodeFPU('fnop',   (), ()),
+        _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        )),
+    _invalidOpcode,
+    SwitchModRMReg((
+        DecodeFPU('fchs',   (), ()),
+        DecodeFPU('fabs',   (), ()),
+        _invalidOpcode, _invalidOpcode,
+        DecodeFPU('ftst',   (), ()),
+        DecodeFPU('fxam',   (), ()),
+        _invalidOpcode, _invalidOpcode,
+        )),
+    SwitchModRMReg((
+        DecodeFPU('fld1',   (), ()),
+        DecodeFPU('fldl2t', (), ()),
+        DecodeFPU('fldl2e', (), ()),
+        DecodeFPU('fldpi',  (), ()),
+        DecodeFPU('fldlg2', (), ()),
+        DecodeFPU('fldln2', (), ()),
+        DecodeFPU('fldz',   (), ()),
+        _invalidOpcode,
+        )),
+    SwitchModRMReg((
+        DecodeFPU('f2xm1',  (), ()),
+        DecodeFPU('fyl2x',  (), ()),
+        DecodeFPU('fptan',  (), ()),
+        DecodeFPU('fpatan', (), ()),
+        DecodeFPU('fxtract',(), ()),
+        DecodeFPU('fprem1', (), ()),
+        DecodeFPU('fdecstp',(), ()),
+        DecodeFPU('fincstp',(), ()),
+        )),
+    SwitchModRMReg((
+        DecodeFPU('fprem',  (), ()),
+        DecodeFPU('fyl2xp1',(), ()),
+        DecodeFPU('fsqrt',  (), ()),
+        DecodeFPU('fsincos',(), ()),
+        DecodeFPU('frndint',(), ()),
+        DecodeFPU('fscale', (), ()),
+        DecodeFPU('fsin',   (), ()),
+        DecodeFPU('fcos',   (), ()),
+        )),
+    ))
+decode_DA = SwitchModRMMod((
+    DecodeFPU('fiadd',      ('Md',), ()),
+    DecodeFPU('fimul',      ('Md',), ()),
+    DecodeFPU('ficom',      ('Md',), ()),
+    DecodeFPU('ficomp',     ('Md',), ()),
+    DecodeFPU('fisub',      ('Md',), ()),
+    DecodeFPU('fisubr',     ('Md',), ()),
+    DecodeFPU('fidiv',      ('Md',), ()),
+    DecodeFPU('fidivr',     ('Md',), ()),
+    ), (
+    DecodeFPU('fcmovb',     ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmove',     ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovbe',    ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovu',     ('st(0)', 'Kt',), ()),
+    _invalidOpcode,
+    SwitchModRMReg((
+        _invalidOpcode,
+        DecodeFPU('fucompp',(), ()),
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        )),
+    _invalidOpcode,
+    _invalidOpcode,
+    ))
+decode_DB = SwitchModRMMod((
+    DecodeFPU('fild',       ('Md',), ()),
+    DecodeFPU('fisttp',     ('Md',), ()),
+    DecodeFPU('fist',       ('Md',), ()),
+    DecodeFPU('fistp',      ('Md',), ()),
+    _invalidOpcode,
+    DecodeFPU('fld',        ('Mt',), ()),
+    _invalidOpcode,
+    DecodeFPU('fst',        ('Mt',), ()),
+    ), (
+    DecodeFPU('fcmovnb',    ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovne',    ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovnbe',   ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovnu',    ('st(0)', 'Kt',), ()),
+    SwitchModRMReg((
+        _invalidOpcode, _invalidOpcode,
+        DecodeFPU('fclex',  (), ()),
+        DecodeFPU('finit',  (), ()),
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        )),
+    DecodeFPU('fucomi',     ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcomi',      ('st(0)', 'Kt',), ()),
+    _invalidOpcode,
+    ))
+
 decode_0F_32 = SwitchOpcode((
     # 00
     None, # ModRM opcode group 6
     None, # ModRM opcode group 7
-    Decode("lar",       ("Gv", "Ew"), ()),
-    Decode("lsl",       ("Gv", "Ew"), ()),
+    Decode('lar',       ('Gv', 'Ew'), ()),
+    Decode('lsl',       ('Gv', 'Ew'), ()),
     _invalidOpcode,
     _invalidOpcode, # SYSCALL -- only 64-bit
-    Decode("clts",      (), ()),
+    Decode('clts',      (), ()),
     _invalidOpcode, # SYSRET -- only 64-bit
     # 08
-    Decode("invd",      (), ()),
-    Decode("wbinvd",    (), ()),
+    Decode('invd',      (), ()),
+    Decode('wbinvd',    (), ()),
     _invalidOpcode,
-    Decode("ud2",       (), ()),
+    Decode('ud2',       (), ()),
     _invalidOpcode,
-    Decode("prefetchw", ("Ev",), ()),
+    Decode('prefetchw', ('Ev',), ()),
     _invalidOpcode,
     _invalidOpcode,
     # 10
@@ -859,25 +1025,25 @@ decode_0F_32 = SwitchOpcode((
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode,
-    Decode("nop",       ("Ev",), ()),
+    Decode('nop',       ('Ev',), ()),
     # 20
-    Decode("mov",       ("Rd", "Cd"), ()),
-    Decode("mov",       ("Rd", "Dd"), ()),
-    Decode("mov",       ("Cd", "Rd"), ()),
-    Decode("mov",       ("Dd", "Rd"), ()),
+    Decode('mov',       ('Rd', 'Cd'), ()),
+    Decode('mov',       ('Rd', 'Dd'), ()),
+    Decode('mov',       ('Cd', 'Rd'), ()),
+    Decode('mov',       ('Dd', 'Rd'), ()),
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 28
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 30
-    Decode("wrmsr",     (), ()),
-    Decode("rdtsc",     (), ()),
-    Decode("rdmsr",     (), ()),
-    Decode("rdpmc",     (), ()),
-    Decode("sysenter",  (), ()),
-    Decode("sysexit",   (), ()),
+    Decode('wrmsr',     (), ()),
+    Decode('rdtsc',     (), ()),
+    Decode('rdmsr',     (), ()),
+    Decode('rdpmc',     (), ()),
+    Decode('sysenter',  (), ()),
+    Decode('sysexit',   (), ()),
     _invalidOpcode,
-    Decode("getsec",    (), ()),
+    Decode('getsec',    (), ()),
     # 38
     None, # Escape 0F38
     _invalidOpcode,
@@ -885,23 +1051,23 @@ decode_0F_32 = SwitchOpcode((
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 40
-    Decode("cmovo",     ("Gv", "Ev"), ()),
-    Decode("cmovno",    ("Gv", "Ev"), ()),
-    Decode("cmovb",     ("Gv", "Ev"), ()),
-    Decode("cmovae",    ("Gv", "Ev"), ()),
-    Decode("cmove",     ("Gv", "Ev"), ()),
-    Decode("cmovne",    ("Gv", "Ev"), ()),
-    Decode("cmovbe",    ("Gv", "Ev"), ()),
-    Decode("cmova",     ("Gv", "Ev"), ()),
+    Decode('cmovo',     ('Gv', 'Ev'), ()),
+    Decode('cmovno',    ('Gv', 'Ev'), ()),
+    Decode('cmovb',     ('Gv', 'Ev'), ()),
+    Decode('cmovae',    ('Gv', 'Ev'), ()),
+    Decode('cmove',     ('Gv', 'Ev'), ()),
+    Decode('cmovne',    ('Gv', 'Ev'), ()),
+    Decode('cmovbe',    ('Gv', 'Ev'), ()),
+    Decode('cmova',     ('Gv', 'Ev'), ()),
     # 48
-    Decode("cmovs",     ("Gv", "Ev"), ()),
-    Decode("cmovns",    ("Gv", "Ev"), ()),
-    Decode("cmovp",     ("Gv", "Ev"), ()),
-    Decode("cmovnp",    ("Gv", "Ev"), ()),
-    Decode("cmovl",     ("Gv", "Ev"), ()),
-    Decode("cmovge",    ("Gv", "Ev"), ()),
-    Decode("cmovle",    ("Gv", "Ev"), ()),
-    Decode("cmovg",     ("Gv", "Ev"), ()),
+    Decode('cmovs',     ('Gv', 'Ev'), ()),
+    Decode('cmovns',    ('Gv', 'Ev'), ()),
+    Decode('cmovp',     ('Gv', 'Ev'), ()),
+    Decode('cmovnp',    ('Gv', 'Ev'), ()),
+    Decode('cmovl',     ('Gv', 'Ev'), ()),
+    Decode('cmovge',    ('Gv', 'Ev'), ()),
+    Decode('cmovle',    ('Gv', 'Ev'), ()),
+    Decode('cmovg',     ('Gv', 'Ev'), ()),
     # 50
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
@@ -918,98 +1084,98 @@ decode_0F_32 = SwitchOpcode((
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 78
-    Decode("vmread",    ("Ey", "Gy"), ()),
-    Decode("vmwrite",   ("Gy", "Ey"), ()),
+    Decode('vmread',    ('Ey', 'Gy'), ()),
+    Decode('vmwrite',   ('Gy', 'Ey'), ()),
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # 80
-    Decode("jo",        ("Jz",), ()),
-    Decode("jno",       ("Jz",), ()),
-    Decode("jb",        ("Jz",), ()),
-    Decode("jae",       ("Jz",), ()),
-    Decode("je",        ("Jz",), ()),
-    Decode("jne",       ("Jz",), ()),
-    Decode("jbe",       ("Jz",), ()),
-    Decode("ja",        ("Jz",), ()),
+    Decode('jo',        ('Jz',), ()),
+    Decode('jno',       ('Jz',), ()),
+    Decode('jb',        ('Jz',), ()),
+    Decode('jae',       ('Jz',), ()),
+    Decode('je',        ('Jz',), ()),
+    Decode('jne',       ('Jz',), ()),
+    Decode('jbe',       ('Jz',), ()),
+    Decode('ja',        ('Jz',), ()),
     # 88
-    Decode("js",        ("Jz",), ()),
-    Decode("jns",       ("Jz",), ()),
-    Decode("jp",        ("Jz",), ()),
-    Decode("jnp",       ("Jz",), ()),
-    Decode("jl",        ("Jz",), ()),
-    Decode("jge",       ("Jz",), ()),
-    Decode("jle",       ("Jz",), ()),
-    Decode("jg",        ("Jz",), ()),
+    Decode('js',        ('Jz',), ()),
+    Decode('jns',       ('Jz',), ()),
+    Decode('jp',        ('Jz',), ()),
+    Decode('jnp',       ('Jz',), ()),
+    Decode('jl',        ('Jz',), ()),
+    Decode('jge',       ('Jz',), ()),
+    Decode('jle',       ('Jz',), ()),
+    Decode('jg',        ('Jz',), ()),
     # 90
-    Decode("seto",      ("Eb",), ()),
-    Decode("setno",     ("Eb",), ()),
-    Decode("setb",      ("Eb",), ()),
-    Decode("setae",     ("Eb",), ()),
-    Decode("sete",      ("Eb",), ()),
-    Decode("setne",     ("Eb",), ()),
-    Decode("setbe",     ("Eb",), ()),
-    Decode("seta",      ("Eb",), ()),
+    Decode('seto',      ('Eb',), ()),
+    Decode('setno',     ('Eb',), ()),
+    Decode('setb',      ('Eb',), ()),
+    Decode('setae',     ('Eb',), ()),
+    Decode('sete',      ('Eb',), ()),
+    Decode('setne',     ('Eb',), ()),
+    Decode('setbe',     ('Eb',), ()),
+    Decode('seta',      ('Eb',), ()),
     # 98
-    Decode("sets",      ("Eb",), ()),
-    Decode("setns",     ("Eb",), ()),
-    Decode("setp",      ("Eb",), ()),
-    Decode("setnp",     ("Eb",), ()),
-    Decode("setl",      ("Eb",), ()),
-    Decode("setge",     ("Eb",), ()),
-    Decode("setle",     ("Eb",), ()),
-    Decode("setg",      ("Eb",), ()),
+    Decode('sets',      ('Eb',), ()),
+    Decode('setns',     ('Eb',), ()),
+    Decode('setp',      ('Eb',), ()),
+    Decode('setnp',     ('Eb',), ()),
+    Decode('setl',      ('Eb',), ()),
+    Decode('setge',     ('Eb',), ()),
+    Decode('setle',     ('Eb',), ()),
+    Decode('setg',      ('Eb',), ()),
     # A0
-    Decode("push",      ("fs",), ()),
-    Decode("pop",       ("fs",), ()),
-    Decode("cpuid",     (), ()),
-    Decode("bt",        ("Ev", "Gv"), ()),
-    Decode("shld",      ("Ev", "Gv", "Ib"), ()),
-    Decode("shld",      ("Ev", "Gv", "cl"), ()),
+    Decode('push',      ('fs',), ()),
+    Decode('pop',       ('fs',), ()),
+    Decode('cpuid',     (), ()),
+    Decode('bt',        ('Ev', 'Gv'), ()),
+    Decode('shld',      ('Ev', 'Gv', 'Ib'), ()),
+    Decode('shld',      ('Ev', 'Gv', 'cl'), ()),
     _invalidOpcode,
     _invalidOpcode,
     # A8
-    Decode("push",      ("gs",), ()),
-    Decode("pop",       ("gs",), ()),
-    Decode("rsm",       (), ()),
-    Decode("bts",       ("Ev", "Gv"), ()),
-    Decode("shrd",      ("Ev", "Gv", "Ib"), ()),
-    Decode("shrd",      ("Ev", "Gv", "cl"), ()),
+    Decode('push',      ('gs',), ()),
+    Decode('pop',       ('gs',), ()),
+    Decode('rsm',       (), ()),
+    Decode('bts',       ('Ev', 'Gv'), ()),
+    Decode('shrd',      ('Ev', 'Gv', 'Ib'), ()),
+    Decode('shrd',      ('Ev', 'Gv', 'cl'), ()),
     None, # Group 15
-    Decode("imul",      ("Gv", "Ev"), ()),
+    Decode('imul',      ('Gv', 'Ev'), ()),
     # B0
-    Decode("cmpxchg",   ("Eb", "Gb"), ()),
-    Decode("cmpxchg",   ("Ev", "Gv"), ()),
-    Decode("lss",       ("Gv", "Mp"), ()),
-    Decode("btr",       ("Ev", "Gv"), ()),
-    Decode("lfs",       ("Gv", "Mp"), ()),
-    Decode("lgs",       ("Gv", "Mp"), ()),
-    Decode("movzx",     ("Gv", "Eb"), ()),
-    Decode("movzx",     ("Gv", "Ew"), ()),
+    Decode('cmpxchg',   ('Eb', 'Gb'), ()),
+    Decode('cmpxchg',   ('Ev', 'Gv'), ()),
+    Decode('lss',       ('Gv', 'Mp'), ()),
+    Decode('btr',       ('Ev', 'Gv'), ()),
+    Decode('lfs',       ('Gv', 'Mp'), ()),
+    Decode('lgs',       ('Gv', 'Mp'), ()),
+    Decode('movzx',     ('Gv', 'Eb'), ()),
+    Decode('movzx',     ('Gv', 'Ew'), ()),
     # B8
     _invalidOpcode,
     None, # ModRM opcode group 10 ?
     None, # ModRM opcode group 8
-    Decode("btc",       ("Ev", "Gv"), ()),
-    Decode("bsf",       ("Gv", "Ev"), ()),
-    Decode("bsr",       ("Gv", "Ev"), ()),
-    Decode("movsx",     ("Gv", "Eb"), ()),
-    Decode("movsx",     ("Gv", "Ew"), ()),
+    Decode('btc',       ('Ev', 'Gv'), ()),
+    Decode('bsf',       ('Gv', 'Ev'), ()),
+    Decode('bsr',       ('Gv', 'Ev'), ()),
+    Decode('movsx',     ('Gv', 'Eb'), ()),
+    Decode('movsx',     ('Gv', 'Ew'), ()),
     # C0
-    Decode("xadd",      ("Eb", "Gb"), ()),
-    Decode("xadd",      ("Ev", "Gv"), ()),
+    Decode('xadd',      ('Eb', 'Gb'), ()),
+    Decode('xadd',      ('Ev', 'Gv'), ()),
     _invalidOpcode,
     _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     # C8
-    Decode("bswap",     ("eax",), ("no66")),
-    Decode("bswap",     ("ecx",), ("no66")),
-    Decode("bswap",     ("edx",), ("no66")),
-    Decode("bswap",     ("ebx",), ("no66")),
-    Decode("bswap",     ("esp",), ("no66")),
-    Decode("bswap",     ("ebp",), ("no66")),
-    Decode("bswap",     ("esi",), ("no66")),
-    Decode("bswap",     ("edi",), ("no66")),
+    Decode('bswap',     ('eax',), ('no66')),
+    Decode('bswap',     ('ecx',), ('no66')),
+    Decode('bswap',     ('edx',), ('no66')),
+    Decode('bswap',     ('ebx',), ('no66')),
+    Decode('bswap',     ('esp',), ('no66')),
+    Decode('bswap',     ('ebp',), ('no66')),
+    Decode('bswap',     ('esi',), ('no66')),
+    Decode('bswap',     ('edi',), ('no66')),
     # D0
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
     _invalidOpcode, _invalidOpcode, _invalidOpcode, _invalidOpcode,
@@ -1032,291 +1198,291 @@ decode_0F_32 = SwitchOpcode((
 
 decode_main_32 = SwitchOpcode((
     # 00
-    Decode("add",       ("Eb", "Gb"), ()),
-    Decode("add",       ("Ev", "Gv"), ("allow66")),
-    Decode("add",       ("Gb", "Eb"), ()),
-    Decode("add",       ("Gv", "Ev"), ("allow66")),
-    Decode("add",       ("al", "Ib"), ()),
-    Decode("add",       ("?ax", "Iz"), ("allow66")),
-    Decode("push",      ("es",), ()), # invalid in x64
-    Decode("pop",       ("es",), ()), # invalid in x64
+    Decode('add',       ('Eb', 'Gb'), ()),
+    Decode('add',       ('Ev', 'Gv'), ('allow66')),
+    Decode('add',       ('Gb', 'Eb'), ()),
+    Decode('add',       ('Gv', 'Ev'), ('allow66')),
+    Decode('add',       ('al', 'Ib'), ()),
+    Decode('add',       ('?ax', 'Iz'), ('allow66')),
+    Decode('push',      ('es',), ()), # invalid in x64
+    Decode('pop',       ('es',), ()), # invalid in x64
     # 08
-    Decode("or",        ("Eb", "Gb"), ()),
-    Decode("or",        ("Ev", "Gv"), ("allow66")),
-    Decode("or",        ("Gb", "Eb"), ()),
-    Decode("or",        ("Gv", "Ev"), ("allow66")),
-    Decode("or",        ("al", "Ib"), ()),
-    Decode("or",        ("?ax", "Iz"), ("allow66")),
-    Decode("push",      ("cs",), ()), # invalid in x64
+    Decode('or',        ('Eb', 'Gb'), ()),
+    Decode('or',        ('Ev', 'Gv'), ('allow66')),
+    Decode('or',        ('Gb', 'Eb'), ()),
+    Decode('or',        ('Gv', 'Ev'), ('allow66')),
+    Decode('or',        ('al', 'Ib'), ()),
+    Decode('or',        ('?ax', 'Iz'), ('allow66')),
+    Decode('push',      ('cs',), ()), # invalid in x64
     decode_0F_32, # Escape 0F
     # 10
-    Decode("adc",       ("Eb", "Gb"), ()),
-    Decode("adc",       ("Ev", "Gv"), ("allow66")),
-    Decode("adc",       ("Gb", "Eb"), ()),
-    Decode("adc",       ("Gv", "Ev"), ("allow66")),
-    Decode("adc",       ("al", "Ib"), ()),
-    Decode("adc",       ("?ax", "Iz"), ("allow66")),
-    Decode("push",      ("ss",), ()), # invalid in x64
-    Decode("pop",       ("ss",), ()), # invalid in x64
+    Decode('adc',       ('Eb', 'Gb'), ()),
+    Decode('adc',       ('Ev', 'Gv'), ('allow66')),
+    Decode('adc',       ('Gb', 'Eb'), ()),
+    Decode('adc',       ('Gv', 'Ev'), ('allow66')),
+    Decode('adc',       ('al', 'Ib'), ()),
+    Decode('adc',       ('?ax', 'Iz'), ('allow66')),
+    Decode('push',      ('ss',), ()), # invalid in x64
+    Decode('pop',       ('ss',), ()), # invalid in x64
     # 18
-    Decode("sbb",       ("Eb", "Gb"), ()),
-    Decode("sbb",       ("Ev", "Gv"), ("allow66")),
-    Decode("sbb",       ("Gb", "Eb"), ()),
-    Decode("sbb",       ("Gv", "Ev"), ("allow66")),
-    Decode("sbb",       ("al", "Ib"), ()),
-    Decode("sbb",       ("?ax", "Iz"), ("allow66")),
-    Decode("push",      ("ds",), ()), # invalid in x64
-    Decode("pop",       ("ds",), ()), # invalid in x64
+    Decode('sbb',       ('Eb', 'Gb'), ()),
+    Decode('sbb',       ('Ev', 'Gv'), ('allow66')),
+    Decode('sbb',       ('Gb', 'Eb'), ()),
+    Decode('sbb',       ('Gv', 'Ev'), ('allow66')),
+    Decode('sbb',       ('al', 'Ib'), ()),
+    Decode('sbb',       ('?ax', 'Iz'), ('allow66')),
+    Decode('push',      ('ds',), ()), # invalid in x64
+    Decode('pop',       ('ds',), ()), # invalid in x64
     # 20
-    Decode("and",       ("Eb", "Gb"), ()),
-    Decode("and",       ("Ev", "Gv"), ("allow66")),
-    Decode("and",       ("Gb", "Eb"), ()),
-    Decode("and",       ("Gv", "Ev"), ("allow66")),
-    Decode("and",       ("al", "Ib"), ()),
-    Decode("and",       ("?ax", "Iz"), ("allow66")),
-    SegmentOverridePrefix("es",),
-    Decode("daa",       (), ()),
+    Decode('and',       ('Eb', 'Gb'), ()),
+    Decode('and',       ('Ev', 'Gv'), ('allow66')),
+    Decode('and',       ('Gb', 'Eb'), ()),
+    Decode('and',       ('Gv', 'Ev'), ('allow66')),
+    Decode('and',       ('al', 'Ib'), ()),
+    Decode('and',       ('?ax', 'Iz'), ('allow66')),
+    SegmentOverridePrefix('es',),
+    Decode('daa',       (), ()),
     # 28
-    Decode("sub",       ("Eb", "Gb",), ()),
-    Decode("sub",       ("Ev", "Gv"), ("allow66")),
-    Decode("sub",       ("Gb", "Eb"), ()),
-    Decode("sub",       ("Gv", "Ev"), ("allow66")),
-    Decode("sub",       ("al", "Ib"), ()),
-    Decode("sub",       ("?ax", "Iz"), ("allow66")),
-    SegmentOverridePrefix("cs",),
-    Decode("das",       (), ()),
+    Decode('sub',       ('Eb', 'Gb',), ()),
+    Decode('sub',       ('Ev', 'Gv'), ('allow66')),
+    Decode('sub',       ('Gb', 'Eb'), ()),
+    Decode('sub',       ('Gv', 'Ev'), ('allow66')),
+    Decode('sub',       ('al', 'Ib'), ()),
+    Decode('sub',       ('?ax', 'Iz'), ('allow66')),
+    SegmentOverridePrefix('cs',),
+    Decode('das',       (), ()),
     # 30
-    Decode("xor",       ("Eb", "Gb"), ()),
-    Decode("xor",       ("Ev", "Gv"), ("allow66")),
-    Decode("xor",       ("Gb", "Eb"), ()),
-    Decode("xor",       ("Gv", "Ev"), ("allow66")),
-    Decode("xor",       ("al", "Ib"), ()),
-    Decode("xor",       ("?ax", "Iz"), ("allow66")),
-    SegmentOverridePrefix("ss",),
-    Decode("aaa",       (), ()),
+    Decode('xor',       ('Eb', 'Gb'), ()),
+    Decode('xor',       ('Ev', 'Gv'), ('allow66')),
+    Decode('xor',       ('Gb', 'Eb'), ()),
+    Decode('xor',       ('Gv', 'Ev'), ('allow66')),
+    Decode('xor',       ('al', 'Ib'), ()),
+    Decode('xor',       ('?ax', 'Iz'), ('allow66')),
+    SegmentOverridePrefix('ss',),
+    Decode('aaa',       (), ()),
     # 38
-    Decode("cmp",       ("Eb", "Gb"), ()),
-    Decode("cmp",       ("Ev", "Gv"), ("allow66")),
-    Decode("cmp",       ("Gb", "Eb"), ()),
-    Decode("cmp",       ("Gv", "Ev"), ("allow66")),
-    Decode("cmp",       ("al", "Ib"), ()),
-    Decode("cmp",       ("?ax", "Iz"), ("allow66")),
-    SegmentOverridePrefix("ds",),
-    Decode("aas",       (), ()),
+    Decode('cmp',       ('Eb', 'Gb'), ()),
+    Decode('cmp',       ('Ev', 'Gv'), ('allow66')),
+    Decode('cmp',       ('Gb', 'Eb'), ()),
+    Decode('cmp',       ('Gv', 'Ev'), ('allow66')),
+    Decode('cmp',       ('al', 'Ib'), ()),
+    Decode('cmp',       ('?ax', 'Iz'), ('allow66')),
+    SegmentOverridePrefix('ds',),
+    Decode('aas',       (), ()),
     # 40
-    Decode("inc",       ("?ax",), ("allow66")),
-    Decode("inc",       ("?cx",), ("allow66")),
-    Decode("inc",       ("?dx",), ("allow66")),
-    Decode("inc",       ("?bx",), ("allow66")),
-    Decode("inc",       ("?sp",), ("allow66")),
-    Decode("inc",       ("?bp",), ("allow66")),
-    Decode("inc",       ("?si",), ("allow66")),
-    Decode("inc",       ("?di",), ("allow66")),
+    Decode('inc',       ('?ax',), ('allow66')),
+    Decode('inc',       ('?cx',), ('allow66')),
+    Decode('inc',       ('?dx',), ('allow66')),
+    Decode('inc',       ('?bx',), ('allow66')),
+    Decode('inc',       ('?sp',), ('allow66')),
+    Decode('inc',       ('?bp',), ('allow66')),
+    Decode('inc',       ('?si',), ('allow66')),
+    Decode('inc',       ('?di',), ('allow66')),
     # 48
-    Decode("dec",       ("?ax",), ("allow66")),
-    Decode("dec",       ("?cx",), ("allow66")),
-    Decode("dec",       ("?dx",), ("allow66")),
-    Decode("dec",       ("?bx",), ("allow66")),
-    Decode("dec",       ("?sp",), ("allow66")),
-    Decode("dec",       ("?bp",), ("allow66")),
-    Decode("dec",       ("?si",), ("allow66")),
-    Decode("dec",       ("?di",), ("allow66")),
+    Decode('dec',       ('?ax',), ('allow66')),
+    Decode('dec',       ('?cx',), ('allow66')),
+    Decode('dec',       ('?dx',), ('allow66')),
+    Decode('dec',       ('?bx',), ('allow66')),
+    Decode('dec',       ('?sp',), ('allow66')),
+    Decode('dec',       ('?bp',), ('allow66')),
+    Decode('dec',       ('?si',), ('allow66')),
+    Decode('dec',       ('?di',), ('allow66')),
     # 50
-    Decode("push",      ("?ax",), ("allow66")),
-    Decode("push",      ("?cx",), ("allow66")),
-    Decode("push",      ("?dx",), ("allow66")),
-    Decode("push",      ("?bx",), ("allow66")),
-    Decode("push",      ("?sp",), ("allow66")),
-    Decode("push",      ("?bp",), ("allow66")),
-    Decode("push",      ("?si",), ("allow66")),
-    Decode("push",      ("?di",), ("allow66")),
+    Decode('push',      ('?ax',), ('allow66')),
+    Decode('push',      ('?cx',), ('allow66')),
+    Decode('push',      ('?dx',), ('allow66')),
+    Decode('push',      ('?bx',), ('allow66')),
+    Decode('push',      ('?sp',), ('allow66')),
+    Decode('push',      ('?bp',), ('allow66')),
+    Decode('push',      ('?si',), ('allow66')),
+    Decode('push',      ('?di',), ('allow66')),
     # 58
-    Decode("pop",       ("?ax",), ("allow66")),
-    Decode("pop",       ("?cx",), ("allow66")),
-    Decode("pop",       ("?dx",), ("allow66")),
-    Decode("pop",       ("?bx",), ("allow66")),
-    Decode("pop",       ("?sp",), ("allow66")),
-    Decode("pop",       ("?bp",), ("allow66")),
-    Decode("pop",       ("?si",), ("allow66")),
-    Decode("pop",       ("?di",), ("allow66")),
+    Decode('pop',       ('?ax',), ('allow66')),
+    Decode('pop',       ('?cx',), ('allow66')),
+    Decode('pop',       ('?dx',), ('allow66')),
+    Decode('pop',       ('?bx',), ('allow66')),
+    Decode('pop',       ('?sp',), ('allow66')),
+    Decode('pop',       ('?bp',), ('allow66')),
+    Decode('pop',       ('?si',), ('allow66')),
+    Decode('pop',       ('?di',), ('allow66')),
     # 60
-    Decode("pusha",     (), ()), # invalid in x64
-    Decode("popa",      (), ()), # invalid in x64
-    Decode("bound",     ("Gv", "Ma"), ()), # invalid in x64
-    Decode("arpl",      ("Ew", "Gw"), ()),
-    SegmentOverridePrefix("fs",),
-    SegmentOverridePrefix("gs",),
+    Decode('pusha',     (), ()), # invalid in x64
+    Decode('popa',      (), ()), # invalid in x64
+    Decode('bound',     ('Gv', 'Ma'), ()), # invalid in x64
+    Decode('arpl',      ('Ew', 'Gw'), ()),
+    SegmentOverridePrefix('fs',),
+    SegmentOverridePrefix('gs',),
     OperandSizePrefix(),
     AddressSizePrefix(),
     # 68
-    Decode("push",      ("Iz",), ("allow66")),
-    Decode("imul",      ("Gv", "Ev", "Iz"), ("allow66")),
-    Decode("push",      ("Ib",), ()),
-    Decode("imul",      ("Gv", "Ev", "Ib"), ("allow66")),
-    Decode("ins",       ("Yb", "dx"), ()),
-    Decode("ins",       ("Yz", "dx"), ("allow66")),
-    Decode("outs",      ("dx", "Xb"), ()),
-    Decode("outs",      ("dx", "Xz"), ("allow66")),
+    Decode('push',      ('Iz',), ('allow66')),
+    Decode('imul',      ('Gv', 'Ev', 'Iz'), ('allow66')),
+    Decode('push',      ('Ib',), ()),
+    Decode('imul',      ('Gv', 'Ev', 'Ib'), ('allow66')),
+    Decode('ins',       ('Yb', 'dx'), ()),
+    Decode('ins',       ('Yz', 'dx'), ('allow66')),
+    Decode('outs',      ('dx', 'Xb'), ()),
+    Decode('outs',      ('dx', 'Xz'), ('allow66')),
     # 70
-    Decode("jo",        ("Jb",), ()),
-    Decode("jno",       ("Jb",), ()),
-    Decode("jb",        ("Jb",), ()),
-    Decode("jae",       ("Jb",), ()),
-    Decode("je",        ("Jb",), ()),
-    Decode("jne",       ("Jb",), ()),
-    Decode("jbe",       ("Jb",), ()),
-    Decode("ja",        ("Jb",), ()),
+    Decode('jo',        ('Jb',), ()),
+    Decode('jno',       ('Jb',), ()),
+    Decode('jb',        ('Jb',), ()),
+    Decode('jae',       ('Jb',), ()),
+    Decode('je',        ('Jb',), ()),
+    Decode('jne',       ('Jb',), ()),
+    Decode('jbe',       ('Jb',), ()),
+    Decode('ja',        ('Jb',), ()),
     # 78
-    Decode("js",        ("Jb",), ()),
-    Decode("jns",       ("Jb",), ()),
-    Decode("jp",        ("Jb",), ()),
-    Decode("jnp",       ("Jb",), ()),
-    Decode("jl",        ("Jb",), ()),
-    Decode("jge",       ("Jb",), ()),
-    Decode("jle",       ("Jb",), ()),
-    Decode("jg",        ("Jb",), ()),
+    Decode('js',        ('Jb',), ()),
+    Decode('jns',       ('Jb',), ()),
+    Decode('jp',        ('Jb',), ()),
+    Decode('jnp',       ('Jb',), ()),
+    Decode('jl',        ('Jb',), ()),
+    Decode('jge',       ('Jb',), ()),
+    Decode('jle',       ('Jb',), ()),
+    Decode('jg',        ('Jb',), ()),
     # 80
     decode_80_32, # ModRM opcode group 1
     decode_81_32, # ModRM opcode group 1
     decode_82_32, # ModRM opcode group 1
     decode_83_32, # ModRM opcode group 1
-    Decode("test",      ("Eb", "Gb"), ()),
-    Decode("test",      ("Ev", "Gv"), ("allow66")),
-    Decode("xchg",      ("Eb", "Gb"), ()),
-    Decode("xchg",      ("Ev", "Gv"), ("allow66")),
+    Decode('test',      ('Eb', 'Gb'), ()),
+    Decode('test',      ('Ev', 'Gv'), ('allow66')),
+    Decode('xchg',      ('Eb', 'Gb'), ()),
+    Decode('xchg',      ('Ev', 'Gv'), ('allow66')),
     # 88
-    Decode("mov",       ("Eb", "Gb"), ()),
-    Decode("mov",       ("Ev", "Gv"), ("allow66")),
-    Decode("mov",       ("Gb", "Eb"), ()),
-    Decode("mov",       ("Gv", "Ev"), ("allow66")),
-    Decode("mov",       ("Ev", "Sw"), ("allow66")),
-    Decode("lea",       ("Gv", "Mv"), ("allow66")), # TBD, docs not clear
-    Decode("mov",       ("Sw", "Ew"), ("allow66")),
+    Decode('mov',       ('Eb', 'Gb'), ()),
+    Decode('mov',       ('Ev', 'Gv'), ('allow66')),
+    Decode('mov',       ('Gb', 'Eb'), ()),
+    Decode('mov',       ('Gv', 'Ev'), ('allow66')),
+    Decode('mov',       ('Ev', 'Sw'), ('allow66')),
+    Decode('lea',       ('Gv', 'Mv'), ('allow66')), # TBD, docs not clear
+    Decode('mov',       ('Sw', 'Ew'), ('allow66')),
     decode_8F_32, # ModRM opcode group 1A
     # 90
-    Decode("nop",       (), ()),
-    Decode("xchg",      ("?cx", "?ax"), ("allow66")),
-    Decode("xchg",      ("?dx", "?ax"), ("allow66")),
-    Decode("xchg",      ("?bx", "?ax"), ("allow66")),
-    Decode("xchg",      ("?sp", "?ax"), ("allow66")),
-    Decode("xchg",      ("?bp", "?ax"), ("allow66")),
-    Decode("xchg",      ("?si", "?ax"), ("allow66")),
-    Decode("xchg",      ("?di", "?ax"), ("allow66")),
+    Decode('nop',       (), ()),
+    Decode('xchg',      ('?cx', '?ax'), ('allow66')),
+    Decode('xchg',      ('?dx', '?ax'), ('allow66')),
+    Decode('xchg',      ('?bx', '?ax'), ('allow66')),
+    Decode('xchg',      ('?sp', '?ax'), ('allow66')),
+    Decode('xchg',      ('?bp', '?ax'), ('allow66')),
+    Decode('xchg',      ('?si', '?ax'), ('allow66')),
+    Decode('xchg',      ('?di', '?ax'), ('allow66')),
     # 98
-    Decode("cwde",      (), ()),
-    Decode("cdq",       (), ()),
-    Decode("callf",     ("Ap",), ()),
-    Decode("wait",      (), ()),
-    Decode("pushf",     ("Fv",), ()),
-    Decode("popf",      ("Fv",), ()),
-    Decode("sahf",      (), ()),
-    Decode("lahf",      (), ()),
+    Decode('cwde',      (), ()),
+    Decode('cdq',       (), ()),
+    Decode('callf',     ('Ap',), ()),
+    Decode('wait',      (), ()),
+    Decode('pushf',     ('Fv',), ()),
+    Decode('popf',      ('Fv',), ()),
+    Decode('sahf',      (), ()),
+    Decode('lahf',      (), ()),
     # A0
-    Decode("mov",       ("al", "Ob"), ()),
-    Decode("mov",       ("?ax", "Ov"), ("allow66")),
-    Decode("mov",       ("Ob", "al"), ()),
-    Decode("mov",       ("Ov", "?ax"), ("allow66")),
-    Decode("movs",      ("Yb", "Xb"), ()),
-    Decode("movs",      ("Yv", "Xv"), ("allow66")),
-    Decode("cmps",      ("Xb", "Yb"), ()),
-    Decode("cmps",      ("Xv", "Yv"), ("allow66")),
+    Decode('mov',       ('al', 'Ob'), ()),
+    Decode('mov',       ('?ax', 'Ov'), ('allow66')),
+    Decode('mov',       ('Ob', 'al'), ()),
+    Decode('mov',       ('Ov', '?ax'), ('allow66')),
+    Decode('movs',      ('Yb', 'Xb'), ()),
+    Decode('movs',      ('Yv', 'Xv'), ('allow66')),
+    Decode('cmps',      ('Xb', 'Yb'), ()),
+    Decode('cmps',      ('Xv', 'Yv'), ('allow66')),
     # A8
-    Decode("test",      ("al", "Ib"), ()),
-    Decode("test",      ("?ax", "Iz"), ("allow66")),
-    Decode("stos",      ("Yb", "al"), ()),
-    Decode("stos",      ("Yv", "?ax"), ("allow66")),
-    Decode("lods",      ("al", "Xb"), ()),
-    Decode("lods",      ("?ax", "Xv"), ("allow66")),
-    Decode("scas",      ("al", "Xb"), ()),
-    Decode("scas",      ("?ax", "Xv"), ("allow66")),
+    Decode('test',      ('al', 'Ib'), ()),
+    Decode('test',      ('?ax', 'Iz'), ('allow66')),
+    Decode('stos',      ('Yb', 'al'), ()),
+    Decode('stos',      ('Yv', '?ax'), ('allow66')),
+    Decode('lods',      ('al', 'Xb'), ()),
+    Decode('lods',      ('?ax', 'Xv'), ('allow66')),
+    Decode('scas',      ('al', 'Xb'), ()),
+    Decode('scas',      ('?ax', 'Xv'), ('allow66')),
     # B0(
-    Decode("mov",       ("al", "Ib"), ()),
-    Decode("mov",       ("cl", "Ib"), ()),
-    Decode("mov",       ("dl", "Ib"), ()),
-    Decode("mov",       ("bl", "Ib"), ()),
-    Decode("mov",       ("ah", "Ib"), ()),
-    Decode("mov",       ("ch", "Ib"), ()),
-    Decode("mov",       ("dh", "Ib"), ()),
-    Decode("mov",       ("bh", "Ib"), ()),
+    Decode('mov',       ('al', 'Ib'), ()),
+    Decode('mov',       ('cl', 'Ib'), ()),
+    Decode('mov',       ('dl', 'Ib'), ()),
+    Decode('mov',       ('bl', 'Ib'), ()),
+    Decode('mov',       ('ah', 'Ib'), ()),
+    Decode('mov',       ('ch', 'Ib'), ()),
+    Decode('mov',       ('dh', 'Ib'), ()),
+    Decode('mov',       ('bh', 'Ib'), ()),
     # B8
-    Decode("mov",       ("?ax", "Iv"), ("allow66")),
-    Decode("mov",       ("?cx", "Iv"), ("allow66")),
-    Decode("mov",       ("?dx", "Iv"), ("allow66")),
-    Decode("mov",       ("?bx", "Iv"), ("allow66")),
-    Decode("mov",       ("?sp", "Iv"), ("allow66")),
-    Decode("mov",       ("?bp", "Iv"), ("allow66")),
-    Decode("mov",       ("?si", "Iv"), ("allow66")),
-    Decode("mov",       ("?di", "Iv"), ("allow66")),
+    Decode('mov',       ('?ax', 'Iv'), ('allow66')),
+    Decode('mov',       ('?cx', 'Iv'), ('allow66')),
+    Decode('mov',       ('?dx', 'Iv'), ('allow66')),
+    Decode('mov',       ('?bx', 'Iv'), ('allow66')),
+    Decode('mov',       ('?sp', 'Iv'), ('allow66')),
+    Decode('mov',       ('?bp', 'Iv'), ('allow66')),
+    Decode('mov',       ('?si', 'Iv'), ('allow66')),
+    Decode('mov',       ('?di', 'Iv'), ('allow66')),
     # C0
     decode_C0_32, # ModRM opcode group 2
     decode_C1_32, # ModRM opcode group 2
-    Decode("retn",      ("Iw",), ()),
-    Decode("retn",      (), ()),
-    Decode("les",       ("Gz", "Mp"), ("allow66")),
-    Decode("lds",       ("Gz", "Mp"), ("allow66")),
+    Decode('retn',      ('Iw',), ()),
+    Decode('retn',      (), ()),
+    Decode('les',       ('Gz', 'Mp'), ('allow66')),
+    Decode('lds',       ('Gz', 'Mp'), ('allow66')),
     decode_C6_32, # ModRM opcode group 11
     decode_C7_32, # ModRM opcode group 11
     # C8
-    Decode("enter",     ("Iw", "Ib"), ()),
-    Decode("leave",     (), ()),
-    Decode("retf",      ("Iw",), ()),
-    Decode("retf",      (), ()),
-    Decode("int3",      (), ()),
-    Decode("int",       ("Ib",), ()),
-    Decode("into",      (), ()),
-    Decode("iret",      (), ()),
+    Decode('enter',     ('Iw', 'Ib'), ()),
+    Decode('leave',     (), ()),
+    Decode('retf',      ('Iw',), ()),
+    Decode('retf',      (), ()),
+    Decode('int3',      (), ()),
+    Decode('int',       ('Ib',), ()),
+    Decode('into',      (), ()),
+    Decode('iret',      (), ()),
     # D0
     decode_D0_32, # ModRM opcode group 2
     decode_D1_32, # ModRM opcode group 2
     decode_D2_32, # ModRM opcode group 2
     decode_D3_32, # ModRM opcode group 2
-    Decode("aam",       ("Ib",), ()),
-    Decode("aad",       ("Ib",), ()),
+    Decode('aam',       ('Ib',), ()),
+    Decode('aad',       ('Ib',), ()),
     _invalidOpcode,
-    Decode("xlat",      (), ()),
+    Decode('xlat',      (), ()),
     # D8
-    None, # FPU escape
-    None, # FPU escape
-    None, # FPU escape
-    None, # FPU escape
+    decode_D8, # FPU escape
+    decode_D9, # FPU escape
+    decode_DA, # FPU escape
+    decode_DB, # FPU escape
     None, # FPU escape
     None, # FPU escape
     None, # FPU escape
     None, # FPU escape
     # E0
-    Decode("loopnz",    ("Jb",), ()),
-    Decode("loopz",     ("Jb",), ()),
-    Decode("loop",      ("Jb",), ()),
-    Decode("jcxz",      ("Jb",), ()),
-    Decode("in",        ("al", "Ib"), ()),
-    Decode("in",        ("?ax", "Ib"), ("allow66")),
-    Decode("out",       ("Ib", "al"), ()),
-    Decode("out",       ("Ib", "?ax"), ("allow66")),
+    Decode('loopnz',    ('Jb',), ()),
+    Decode('loopz',     ('Jb',), ()),
+    Decode('loop',      ('Jb',), ()),
+    Decode('jcxz',      ('Jb',), ()),
+    Decode('in',        ('al', 'Ib'), ()),
+    Decode('in',        ('?ax', 'Ib'), ('allow66')),
+    Decode('out',       ('Ib', 'al'), ()),
+    Decode('out',       ('Ib', '?ax'), ('allow66')),
     # E8
-    Decode("call",      ("Jz",), ()),
-    Decode("jmp",       ("Jz",), ()),
-    Decode("jmp",       ("Ap",), ()),
-    Decode("jmp",       ("Jb",), ()),
-    Decode("in",        ("al", "dx"), ()),
-    Decode("in",        ("?ax", "dx"), ("allow66")),
-    Decode("out",       ("dx", "al"), ()),
-    Decode("out",       ("dx", "?ax"), ("allow66")),
+    Decode('call',      ('Jz',), ()),
+    Decode('jmp',       ('Jz',), ()),
+    Decode('jmp',       ('Ap',), ()),
+    Decode('jmp',       ('Jb',), ()),
+    Decode('in',        ('al', 'dx'), ()),
+    Decode('in',        ('?ax', 'dx'), ('allow66')),
+    Decode('out',       ('dx', 'al'), ()),
+    Decode('out',       ('dx', '?ax'), ('allow66')),
     # F0
     LockPrefix(),
     _invalidOpcode,
     RepnePrefix(),
     RepePrefix(),
-    Decode("hlt",       (), ()),
-    Decode("cmc",       (), ()),
+    Decode('hlt',       (), ()),
+    Decode('cmc',       (), ()),
     decode_F6_32, # ModRM opcode group 3
     decode_F7_32, # ModRM opcode group 3
     # F8
-    Decode("clc",       (), ()),
-    Decode("stc",       (), ()),
-    Decode("cli",       (), ()),
-    Decode("sti",       (), ()),
-    Decode("cld",       (), ()),
-    Decode("std",       (), ()),
+    Decode('clc',       (), ()),
+    Decode('stc',       (), ()),
+    Decode('cli',       (), ()),
+    Decode('sti',       (), ()),
+    Decode('cld',       (), ()),
+    Decode('std',       (), ()),
     decode_FE_32, # ModRM opcode group 4
     decode_FF_32)) # ModRM opcode group 5
 #

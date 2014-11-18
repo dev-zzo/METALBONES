@@ -19,3 +19,8 @@ print p.print_insn(decode("\x26\x67\x00\x44\x7f"))
 print p.print_insn(decode("\x67\x00\x84\xff\xff"))
 # lea eax, ss:[esp+10]
 print p.print_insn(decode("\x8d\x44\x24\x10\x89\x89\x89"))
+# fsub dword ds:[eax]
+print p.print_insn(decode("\xd8\x00"))
+print p.print_insn(decode("\xd8\x40\x41"))
+print p.print_insn(decode("\xd8\x80\x41\x41\x41\x41"))
+print p.print_insn(decode("\xd8\xc0"))
