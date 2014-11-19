@@ -307,23 +307,8 @@ class SwitchPrefix:
         if state.prefix_F3:
             state.prefix_F3 = False
             return self.pfxF3(state)
-class SwitchModRMMemRegOp:
-    """Switch between whether it's memory or register operand kind in ModRM"""
-    def __init__(self, mod_mem=None, mod_reg=None):
-        self.mod_mem = mod_mem
-        self.mod_reg = mod_reg
-    def __call__(self, state):
-        state.fetch_modrm()
-        e = self.entries[state.modrm_reg]
-        return e(state)
-class SwitchModRMReg:
-    def __init__(self, entries):
-        self.entries = entries
-    def __call__(self, state):
-        state.fetch_modrm()
-        e = self.entries[state.modrm_reg]
-        return e(state)
 class SwitchModRMMod:
+    """Choose either Mod{012} or Mod3, and then switch by Reg"""
     def __init__(self, mod_012, mod_3):
         self.lower_tab = mod_012
         self.upper_tab = mod_3
@@ -333,6 +318,22 @@ class SwitchModRMMod:
             e = self.lower_tab[state.modrm_reg]
         else:
             e = self.upper_tab[state.modrm_reg]
+        return e(state)
+class SwitchModRMReg:
+    """Switch by Reg"""
+    def __init__(self, entries):
+        self.entries = entries
+    def __call__(self, state):
+        state.fetch_modrm()
+        e = self.entries[state.modrm_reg]
+        return e(state)
+class SwitchModRMRM:
+    """Switch by R/M"""
+    def __init__(self, entries):
+        self.entries = entries
+    def __call__(self, state):
+        state.fetch_modrm()
+        e = self.entries[state.modrm_rm]
         return e(state)
 
 _modrm_lookup_16 = (
@@ -543,6 +544,8 @@ def _decode_Mp(state):
         raise InvalidOpcodeError()
     opsize = _decode_opsize_p(state)
     return _decode_E_mem(state, opsize)
+def _decode_Mb(state):
+    return _decode_E_mem(state, OPW_8BIT)
 def _decode_Mw(state):
     return _decode_E_mem(state, OPW_16BIT)
 def _decode_Md(state):
@@ -850,6 +853,15 @@ decode_FF_32 = SwitchModRMReg((
     Decode('push',      ('Ev',), ('allow66')),
     _invalidOpcode
     ))
+# Group 8
+decode_0F_BA = SwitchModRMReg((
+    _invalidOpcode, _invalidOpcode,
+    _invalidOpcode, _invalidOpcode, 
+    Decode('bt',        ('Ev', 'Ib'), ()),
+    Decode('bts',       ('Ev', 'Ib'), ()),
+    Decode('btr',       ('Ev', 'Ib'), ()),
+    Decode('btc',       ('Ev', 'Ib'), ()),
+    ))
 # Group 11
 decode_C6_32 = SwitchModRMReg((
     Decode('mov',       ('Eb', 'Ib'), ()),
@@ -865,6 +877,17 @@ decode_C7_32 = SwitchModRMReg((
     _invalidOpcode, _invalidOpcode, 
     _invalidOpcode, _invalidOpcode
     ))
+# Group 15
+decode_0F_AE = SwitchModRMMod((
+    Decode('fxsave',    ('Md',), ()),
+    Decode('fxrstor',   ('Md',), ()),
+    Decode('ldmxcsr',   ('Md',), ()),
+    Decode('stmxcsr',   ('Md',), ()),
+    _invalidOpcode, _invalidOpcode, 
+    _invalidOpcode, _invalidOpcode
+    ),
+    _invalidOpcode # Not implemented yet
+    )
 
 decode_D8 = SwitchModRMMod((
     DecodeFPU('fadd',       ('Md',), ()),
@@ -876,14 +899,14 @@ decode_D8 = SwitchModRMMod((
     DecodeFPU('fdiv',       ('Md',), ()),
     DecodeFPU('fdivr',      ('Md',), ()),
     ), (
-    DecodeFPU('fadd',       ('st(0)', 'Kt',), ()),
-    DecodeFPU('fmul',       ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcom',       ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcomp',      ('st(0)', 'Kt',), ()),
-    DecodeFPU('fsub',       ('st(0)', 'Kt',), ()),
-    DecodeFPU('fsubr',      ('st(0)', 'Kt',), ()),
-    DecodeFPU('fdiv',       ('st(0)', 'Kt',), ()),
-    DecodeFPU('fdivr',      ('st(0)', 'Kt',), ()),
+    DecodeFPU('fadd',       ('st(0)', 'Kt'), ()),
+    DecodeFPU('fmul',       ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcom',       ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcomp',      ('st(0)', 'Kt'), ()),
+    DecodeFPU('fsub',       ('st(0)', 'Kt'), ()),
+    DecodeFPU('fsubr',      ('st(0)', 'Kt'), ()),
+    DecodeFPU('fdiv',       ('st(0)', 'Kt'), ()),
+    DecodeFPU('fdivr',      ('st(0)', 'Kt'), ()),
     ))
 decode_D9 = SwitchModRMMod((
     DecodeFPU('fld',        ('Md',), ()),
@@ -895,9 +918,9 @@ decode_D9 = SwitchModRMMod((
     DecodeFPU('fstenv',     ('Md',), ()), # 14/28 bytes
     DecodeFPU('fstcw',      ('Mw',), ()),
     ), (
-    DecodeFPU('fld',        ('st(0)', 'Kt',), ()),
-    DecodeFPU('fxch',       ('st(0)', 'Kt',), ()),
-    SwitchModRMReg((
+    DecodeFPU('fld',        ('st(0)', 'Kt'), ()),
+    DecodeFPU('fxch',       ('st(0)', 'Kt'), ()),
+    SwitchModRMRM((
         DecodeFPU('fnop',   (), ()),
         _invalidOpcode,
         _invalidOpcode, _invalidOpcode,
@@ -905,7 +928,7 @@ decode_D9 = SwitchModRMMod((
         _invalidOpcode, _invalidOpcode,
         )),
     _invalidOpcode,
-    SwitchModRMReg((
+    SwitchModRMRM((
         DecodeFPU('fchs',   (), ()),
         DecodeFPU('fabs',   (), ()),
         _invalidOpcode, _invalidOpcode,
@@ -913,7 +936,7 @@ decode_D9 = SwitchModRMMod((
         DecodeFPU('fxam',   (), ()),
         _invalidOpcode, _invalidOpcode,
         )),
-    SwitchModRMReg((
+    SwitchModRMRM((
         DecodeFPU('fld1',   (), ()),
         DecodeFPU('fldl2t', (), ()),
         DecodeFPU('fldl2e', (), ()),
@@ -923,7 +946,7 @@ decode_D9 = SwitchModRMMod((
         DecodeFPU('fldz',   (), ()),
         _invalidOpcode,
         )),
-    SwitchModRMReg((
+    SwitchModRMRM((
         DecodeFPU('f2xm1',  (), ()),
         DecodeFPU('fyl2x',  (), ()),
         DecodeFPU('fptan',  (), ()),
@@ -933,7 +956,7 @@ decode_D9 = SwitchModRMMod((
         DecodeFPU('fdecstp',(), ()),
         DecodeFPU('fincstp',(), ()),
         )),
-    SwitchModRMReg((
+    SwitchModRMRM((
         DecodeFPU('fprem',  (), ()),
         DecodeFPU('fyl2xp1',(), ()),
         DecodeFPU('fsqrt',  (), ()),
@@ -954,12 +977,12 @@ decode_DA = SwitchModRMMod((
     DecodeFPU('fidiv',      ('Md',), ()),
     DecodeFPU('fidivr',     ('Md',), ()),
     ), (
-    DecodeFPU('fcmovb',     ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmove',     ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmovbe',    ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmovu',     ('st(0)', 'Kt',), ()),
+    DecodeFPU('fcmovb',     ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmove',     ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmovbe',    ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmovu',     ('st(0)', 'Kt'), ()),
     _invalidOpcode,
-    SwitchModRMReg((
+    SwitchModRMRM((
         _invalidOpcode,
         DecodeFPU('fucompp',(), ()),
         _invalidOpcode, _invalidOpcode,
@@ -979,19 +1002,103 @@ decode_DB = SwitchModRMMod((
     _invalidOpcode,
     DecodeFPU('fst',        ('Mt',), ()),
     ), (
-    DecodeFPU('fcmovnb',    ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmovne',    ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmovnbe',   ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcmovnu',    ('st(0)', 'Kt',), ()),
-    SwitchModRMReg((
+    DecodeFPU('fcmovnb',    ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmovne',    ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmovnbe',   ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcmovnu',    ('st(0)', 'Kt'), ()),
+    SwitchModRMRM((
         _invalidOpcode, _invalidOpcode,
         DecodeFPU('fclex',  (), ()),
         DecodeFPU('finit',  (), ()),
         _invalidOpcode, _invalidOpcode,
         _invalidOpcode, _invalidOpcode,
         )),
-    DecodeFPU('fucomi',     ('st(0)', 'Kt',), ()),
-    DecodeFPU('fcomi',      ('st(0)', 'Kt',), ()),
+    DecodeFPU('fucomi',     ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcomi',      ('st(0)', 'Kt'), ()),
+    _invalidOpcode,
+    ))
+decode_DC = SwitchModRMMod((
+    DecodeFPU('fadd',       ('Mq',), ()),
+    DecodeFPU('fmul',       ('Mq',), ()),
+    DecodeFPU('fcom',       ('Mq',), ()),
+    DecodeFPU('fcomp',      ('Mq',), ()),
+    DecodeFPU('fsub',       ('Mq',), ()),
+    DecodeFPU('fsubr',      ('Mq',), ()),
+    DecodeFPU('fdiv',       ('Mq',), ()),
+    DecodeFPU('fdivr',      ('Mq',), ()),
+    ), (
+    DecodeFPU('fadd',       ('Kt', 'st(0)'), ()),
+    DecodeFPU('fmul',       ('Kt', 'st(0)'), ()),
+    _invalidOpcode, _invalidOpcode,
+    DecodeFPU('fsubr',      ('Kt', 'st(0)'), ()),
+    DecodeFPU('fsub',       ('Kt', 'st(0)'), ()),
+    DecodeFPU('fdivr',      ('Kt', 'st(0)'), ()),
+    DecodeFPU('fdiv',       ('Kt', 'st(0)'), ()),
+    ))
+decode_DD = SwitchModRMMod((
+    DecodeFPU('fld',        ('Mq',), ()),
+    DecodeFPU('fisttp',     ('Mq',), ()),
+    DecodeFPU('fst',        ('Mq',), ()),
+    DecodeFPU('fstp',       ('Mq',), ()),
+    DecodeFPU('frstor',     ('Md',), ()), # 98/108 bytes
+    _invalidOpcode,
+    DecodeFPU('fsave',      ('Md',), ()), # 98/108 bytes
+    DecodeFPU('fstsw',      ('Mw',), ()),
+    ), (
+    DecodeFPU('ffree',      ('Kt',), ()),
+    _invalidOpcode,
+    DecodeFPU('fst',        ('Kt',), ()),
+    DecodeFPU('fstp',       ('Kt',), ()),
+    DecodeFPU('fucom',      ('Kt', 'st(0)'), ()),
+    DecodeFPU('fucomp',     ('Kt',), ()),
+    _invalidOpcode, _invalidOpcode,
+    ))
+decode_DE = SwitchModRMMod((
+    DecodeFPU('fiadd',      ('Mw',), ()),
+    DecodeFPU('fimul',      ('Mw',), ()),
+    DecodeFPU('ficom',      ('Mw',), ()),
+    DecodeFPU('ficomp',     ('Mw',), ()),
+    DecodeFPU('fisub',      ('Mw',), ()),
+    DecodeFPU('fisubr',     ('Mw',), ()),
+    DecodeFPU('fidiv',      ('Mw',), ()),
+    DecodeFPU('fidivr',     ('Mw',), ()),
+    ), (
+    DecodeFPU('faddp',      ('Kt', 'st(0)'), ()),
+    DecodeFPU('fmulp',      ('Kt', 'st(0)'), ()),
+    _invalidOpcode,
+    SwitchModRMRM((
+        _invalidOpcode,
+        DecodeFPU('fcompp',(), ()),
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        )),
+    DecodeFPU('fsubrp',     ('Kt', 'st(0)'), ()),
+    DecodeFPU('fsubp',      ('Kt', 'st(0)'), ()),
+    DecodeFPU('fdivrp',     ('Kt', 'st(0)'), ()),
+    DecodeFPU('fdivp',      ('Kt', 'st(0)'), ()),
+    ))
+decode_DF = SwitchModRMMod((
+    DecodeFPU('fild',       ('Mw',), ()),
+    DecodeFPU('fisttp',     ('Mw',), ()),
+    DecodeFPU('fist',       ('Mw',), ()),
+    DecodeFPU('fistp',      ('Mw',), ()),
+    DecodeFPU('fbld',       ('Mb',), ()),
+    DecodeFPU('fild',       ('Mq',), ()),
+    DecodeFPU('fbstp',      ('Mb',), ()),
+    DecodeFPU('fistp',      ('Mq',), ()),
+    ), (
+    _invalidOpcode, _invalidOpcode,
+    _invalidOpcode, _invalidOpcode,
+    SwitchModRMRM((
+        DecodeFPU('fstsw',  ('ax',), ()),
+        _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        _invalidOpcode, _invalidOpcode,
+        )),
+    DecodeFPU('fucomip',    ('st(0)', 'Kt'), ()),
+    DecodeFPU('fcomip',     ('st(0)', 'Kt'), ()),
     _invalidOpcode,
     ))
 
@@ -1141,7 +1248,7 @@ decode_0F_32 = SwitchOpcode((
     Decode('bts',       ('Ev', 'Gv'), ()),
     Decode('shrd',      ('Ev', 'Gv', 'Ib'), ()),
     Decode('shrd',      ('Ev', 'Gv', 'cl'), ()),
-    None, # Group 15
+    decode_0F_AE, # Group 15
     Decode('imul',      ('Gv', 'Ev'), ()),
     # B0
     Decode('cmpxchg',   ('Eb', 'Gb'), ()),
@@ -1155,7 +1262,7 @@ decode_0F_32 = SwitchOpcode((
     # B8
     _invalidOpcode,
     None, # ModRM opcode group 10 ?
-    None, # ModRM opcode group 8
+    decode_0F_BA, # ModRM opcode group 8
     Decode('btc',       ('Ev', 'Gv'), ()),
     Decode('bsf',       ('Gv', 'Ev'), ()),
     Decode('bsr',       ('Gv', 'Ev'), ()),
@@ -1445,10 +1552,10 @@ decode_main_32 = SwitchOpcode((
     decode_D9, # FPU escape
     decode_DA, # FPU escape
     decode_DB, # FPU escape
-    None, # FPU escape
-    None, # FPU escape
-    None, # FPU escape
-    None, # FPU escape
+    decode_DC, # FPU escape
+    decode_DD, # FPU escape
+    decode_DE, # FPU escape
+    decode_DF, # FPU escape
     # E0
     Decode('loopnz',    ('Jb',), ()),
     Decode('loopz',     ('Jb',), ()),
