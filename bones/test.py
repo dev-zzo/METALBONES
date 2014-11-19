@@ -3,11 +3,12 @@ import mcode
 
 class MemReader:
     def __init__(self, process, address):
-        self.process = process
-        self.address = address
+        # No insns should be longer than 16 bytes, so try read them all
+        self.data = process.read_memory(address, 16)
+        self.offset = 0
     def read(self):
-        b = ord(self.process.read_memory(self.address, 1))
-        self.address += 1
+        b = ord(self.data[self.offset])
+        self.offset += 1
         return b
 
 class TestDebugger(bones.Debugger):
@@ -25,6 +26,7 @@ class TestDebugger(bones.Debugger):
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)
         print str(t.context)
+        print self.format_insn_at(t.process, t.context.eip)
         t.set_single_step()
 
     def on_thread_exit(self, t):
@@ -44,19 +46,6 @@ class TestDebugger(bones.Debugger):
     def on_exception(self, t, info, first_chance):
         print "[%05d/%05d] Exception caught (%s-chance)." % (t.process.id, t.id, "first" if first_chance else "second")
         print str(info)
-        try:
-            c = 0
-            reader = MemReader(t.process, info.address)
-            printer = mcode.Printer()
-            while c < 4:
-                addr = reader.address
-                insn = mcode.decode(mcode.State(reader))
-                print '%08x %-20s %s' % (addr, insn.opcode_hex, printer.print_insn(insn))
-                if insn.mnemonic in ('retn', 'retf'):
-                    break
-                c += 1
-        except Exception, e:
-            raise
 
     def on_breakpoint(self, t):
         return
@@ -66,17 +55,21 @@ class TestDebugger(bones.Debugger):
         print "Location: %s" % (t.process.get_location_from_va(ctx.eip))
     
     def on_single_step(self, t):
-        print "[%05d/%05d] Single stepping" % (t.process.id, t.id)
-        ctx = t.context
-        #print str(ctx)
-        print self.format_insn_at(t.process, ctx.eip)
+        # print "[%05d/%05d] Single stepping" % (t.process.id, t.id)
+        #addr = 0
+        #ctx = t.context
+        addr = t.context.eip
+        print self.format_insn_at(t.process, addr)
         t.set_single_step()
     
     def format_insn_at(self, process, address):
-        reader = MemReader(process, address)
+        try:
+            reader = MemReader(process, address)
+        except:
+            return '%08x %-22s' % (address, '???')
         printer = mcode.Printer()
         insn = mcode.decode(mcode.State(reader))
-        return '%08x %-20s %s' % (address, insn.opcode_hex, printer.print_insn(insn))
+        return '%08x %-22s %s' % (address, insn.opcode_hex, printer.print_insn(insn))
 #
 
 d = TestDebugger()

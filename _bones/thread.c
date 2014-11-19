@@ -149,25 +149,25 @@ get_exit_status(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
-static int
+static PyObject *
 set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
-        return -1;
+        return NULL;
     }
 
     if (PyInt_CheckExact(value)) {
         self->exit_status = (NTSTATUS)PyInt_AsLong(value);
-        return 0;
+        Py_RETURN_NONE;
     }
     if (PyLong_CheckExact(value)) {
         self->exit_status = (NTSTATUS)PyLong_AsUnsignedLong(value);
-        return 0;
+        Py_RETURN_NONE;
     }
 
     PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
-    return -1;
+    return NULL;
 }
 
 static PyObject *
@@ -186,20 +186,23 @@ get_context(PyBones_ThreadObject *self, void *closure)
     return context;
 }
 
-static int
+static PyObject *
 set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
-        return -1;
+        return NULL;
     }
 
     if (!PyBones_Context_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Expected an instance of Context.");
-        return -1;
+        return NULL;
     }
 
-    return _PyBones_Context_Set(value, self->handle);
+    if (_PyBones_Context_Set(value, self->handle) < 0) {
+        return NULL;
+    }
+    Py_RETURN_NONE;
 }
 
 static PyGetSetDef getseters[] = {
@@ -210,6 +213,38 @@ static PyGetSetDef getseters[] = {
     { "teb_address", (getter)get_teb_address, NULL, "Thread Environment Block address", NULL },
     { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the thread exits", NULL },
     { "context", (getter)get_context, (setter)set_context, "Thread's CPU context", NULL },
+    {NULL}  /* Sentinel */
+};
+
+PyDoc_STRVAR(set_single_step__doc__,
+"set_single_step(self)\n\n\
+Enable single-stepping this thread.\n\
+Is active ONLY UNTIL THE NEXT SINGLE STEP EVENT.");
+
+static PyObject *
+set_single_step(PyBones_ThreadObject *self)
+{
+    CONTEXT ctx;
+    NTSTATUS status;
+
+    ctx.ContextFlags = CONTEXT_CONTROL;
+    status = NtGetContextThread(self->handle, &ctx);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return NULL;
+    }
+    ctx.EFlags |= 0x100U;
+    status = NtSetContextThread(self->handle, &ctx);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef methods[] = {
+    { "set_single_step", (PyCFunction)set_single_step, METH_NOARGS, set_single_step__doc__ },
     {NULL}  /* Sentinel */
 };
 
@@ -244,7 +279,7 @@ PyTypeObject PyBones_Thread_Type = {
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
     0,  /* tp_iternext */
-    0,  /* tp_methods */
+    methods,  /* tp_methods */
     0,  /* tp_members */
     getseters,  /* tp_getset */
     0,  /* tp_base */

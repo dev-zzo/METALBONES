@@ -24,3 +24,5 @@ print p.print_insn(decode("\xd8\x00"))
 print p.print_insn(decode("\xd8\x40\x41"))
 print p.print_insn(decode("\xd8\x80\x41\x41\x41\x41"))
 print p.print_insn(decode("\xd8\xc0"))
+
+print p.print_insn(decode("\xdb\xe2"))
