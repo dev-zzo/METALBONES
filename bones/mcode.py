@@ -572,8 +572,8 @@ def _decode_X_(state, size):
     seg = state.seg_override
     if seg is None:
         seg = _register_map['ds']
-    index = _gpr_decode[state.address_width][6]
-    return MemoryRef(size, index=index, seg=seg)
+    base = _gpr_decode[state.address_width][6]
+    return MemoryRef(size, base=base, seg=seg)
 def _decode_Xb(state):
     return _decode_X_(state, OPW_8BIT)
 def _decode_Xv(state):
@@ -586,8 +586,8 @@ def _decode_Y_(state, size):
     seg = state.seg_override
     if seg is None:
         seg = _register_map['es']
-    index = _gpr_decode[state.address_width][7]
-    return MemoryRef(size, index=index, seg=seg)
+    base = _gpr_decode[state.address_width][7]
+    return MemoryRef(size, base=base, seg=seg)
 def _decode_Yb(state):
     return _decode_Y_(state, OPW_8BIT)
 def _decode_Yv(state):
