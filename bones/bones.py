@@ -1,5 +1,21 @@
+"""
+Layer 2 of the METALBONES core.
+
+This wraps CPython objects and adds more functionality that
+can be easily implemented in Python instead of C.
+"""
+
 import _bones
 import os.path
+
+class Location:
+    def __init__(self, rva, module=None):
+        self.module = module
+        self.rva = rva
+    def __str__(self):
+        if self.module is not None:
+            return '%s+%08x' % (self.module.name, self.rva - self.module.base_address)
+        return '%08x' % self.rva
 
 class Process(_bones.Process):
     """An abstraction representing a debugged process."""
@@ -12,10 +28,7 @@ class Process(_bones.Process):
         return None
     
     def get_location_from_va(self, address):
-        m = self.get_module_from_va(address)
-        if m is None:
-            return "%08x" % address
-        return "%s+%08x" % (os.path.basename(m.path), address - m.base_address)
+        return Location(address, self.get_module_from_va(address))
 #
 
 class Thread(_bones.Thread):
@@ -46,6 +59,9 @@ class Module(_bones.Module):
             self._mapped_size = size
             return self._mapped_size
 
+    def get_name(self):
+        return os.path.basename(self.path)
+
     def get_path(self):
         try:
             return self._path
@@ -53,6 +69,7 @@ class Module(_bones.Module):
             self._path = self.process.query_section_file_name(self.base_address)
             return self._path
     
+    name = property(get_name, None, None, "Module file name")
     path = property(get_path, None, None, "Module file path")
     mapped_size = property(get_mapped_size, None, None, "Module's size in virtual memory")
 #
@@ -159,12 +176,13 @@ class Debugger(_bones.Debugger):
         
         process = self.processes[pid]
         thread = process.threads[tid]
+        result = Debugger.DBG_EXCEPTION_NOT_HANDLED
         try:
-            self.on_exception(thread, info, first_chance)
+            result = self.on_exception(thread, info, first_chance)
         except AttributeError, e:
             if 'on_exception' not in e.message:
                 raise
-        return Debugger.DBG_EXCEPTION_NOT_HANDLED
+        return result
 
     def _on_breakpoint(self, pid, tid):
         """The DbgBreakpointStateChange handler."""
@@ -172,11 +190,12 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
+            # Return result ignored; always DBG_CONTINUE
             self.on_breakpoint(thread)
         except AttributeError, e:
             if 'on_breakpoint' not in e.message:
                 raise
-        return Debugger.DBG_EXCEPTION_HANDLED
+        return Debugger.DBG_CONTINUE
 
     def _on_single_step(self, pid, tid):
         """The DbgSingleStepStateChange handler."""
@@ -184,9 +203,10 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
+            # Return result ignored; always DBG_CONTINUE
             self.on_single_step(thread)
         except AttributeError, e:
             if 'on_single_step' not in e.message:
                 raise
-        return Debugger.DBG_EXCEPTION_HANDLED
+        return Debugger.DBG_CONTINUE
 #
