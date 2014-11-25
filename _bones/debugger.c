@@ -97,7 +97,7 @@ spawn(PyBones_DebuggerObject *self, PyObject *args)
         &startup_info, /* */
         &process_info);
     if (!cp_result) {
-        PyErr_SetObject(PyBones_Win32Error, PyInt_FromLong(GetLastError()));
+        PyBones_RaiseWin32Error(GetLastError());
         goto exit0;
     }
 

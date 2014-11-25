@@ -16,7 +16,7 @@ void *
 _PyBones_Process_GetPebAddress(PyObject *self);
 
 int
-PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void *buffer);
+PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void* dest);
 
 PyObject *
 PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address);

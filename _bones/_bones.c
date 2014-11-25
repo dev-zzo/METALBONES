@@ -1,4 +1,5 @@
 #include <Python.h>
+#include <Windows.h>
 
 #include "internal.h"
 
@@ -29,6 +30,37 @@ _PyBones_RaiseNtStatusError(const char *file, int line, unsigned int status)
     PyErr_SetString(PyBones_NtStatusError, buffer);
 }
 
+void
+_PyBones_RaiseWin32Error(const char *file, int line, unsigned int code)
+{
+    char msg_buffer[128];
+    char buffer[256];
+    unsigned count;
+    char *end;
+
+    count = FormatMessageA(
+        FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        code,
+        0,
+        msg_buffer,
+        sizeof(msg_buffer),
+        NULL);
+    if (count) {
+        end = msg_buffer + count - 1;
+        while (*end == '\n' || *end == '\r') {
+            end--;
+        }
+        *end = '\0';
+    }
+    else {
+        sprintf(msg_buffer, "<Failed to retrieve the message>");
+    }
+
+    sprintf(buffer, "%s:%d: %s", file, line, msg_buffer);
+    PyErr_SetString(PyBones_Win32Error, buffer);
+}
+
 static int
 ready_add_type(PyObject* m, const char *name, PyTypeObject *t)
 {
@@ -46,7 +78,6 @@ PyMODINIT_FUNC
 init_bones(void) 
 {
     PyObject* m;
-    int rv;
 
     m = Py_InitModule3(
         "_bones",
@@ -69,5 +100,4 @@ init_bones(void)
     ready_add_type(m, "Context", &PyBones_Context_Type);
     ready_add_type(m, "Module", &PyBones_Module_Type);
     ready_add_type(m, "ExceptionInfo", &PyBones_ExceptionInfo_Type);
-    ready_add_type(m, "AccessViolationInfo", &PyBones_AccessViolationInfo_Type);
 }

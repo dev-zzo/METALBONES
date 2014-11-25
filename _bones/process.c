@@ -171,6 +171,26 @@ exit0:
     return NULL;
 }
 
+int
+PyBones_Process_ReadMemoryPtr(PyObject *self, void *address, unsigned size, void* dest)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+
+    status = NtReadVirtualMemory(
+        _self->handle,
+        address,
+        dest,
+        size,
+        NULL);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return -1;
+    }
+
+    return 0;
+}
+
 PyObject *
 PyBones_Process_WriteMemory(PyObject *self, void *address, unsigned size, PyObject *buffer)
 {

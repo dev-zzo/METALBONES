@@ -19,6 +19,9 @@ class Location:
 
 class Process(_bones.Process):
     """An abstraction representing a debugged process."""
+    def __init__(self, pid, process_handle, base_address):
+        _bones.Process.__init__(self, pid, process_handle, base_address)
+        self.image = None
     
     def get_module_from_va(self, address):
         for m in self.modules.values():
@@ -83,28 +86,30 @@ class Debugger(_bones.Debugger):
     def _on_process_create(self, pid, process_handle, tid, thread_handle, base_address, start_address):
         """The DbgCreateProcessStateChange handler."""
         
-        # print "[%05d] Process created." % (pid)
         process = Process(pid, process_handle, base_address)
         self.processes[pid] = process
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_process_create(process)
         except AttributeError, e:
             if 'on_process_create' not in e.message:
                 raise
         self._on_module_load(pid, base_address)
+        process.image = process.modules[base_address]
         self._on_thread_create(pid, tid, thread_handle, start_address)
+        try:
+            self.on_process_created(process)
+        except AttributeError, e:
+            if 'on_process_created' not in e.message:
+                raise
         return Debugger.DBG_CONTINUE
 
     def _on_module_load(self, pid, base_address):
         """The DbgLoadDllStateChange handler."""
         
-        # print "[%05d] Module loaded: %08x." % (pid, base_address)
         process = self.processes[pid]
         module = Module(base_address, process)
         process.modules[base_address] = module
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_module_load(module)
         except AttributeError, e:
             if 'on_module_load' not in e.message:
@@ -114,12 +119,10 @@ class Debugger(_bones.Debugger):
     def _on_thread_create(self, pid, tid, handle, start_address):
         """The DbgCreateThreadStateChange handler."""
         
-        # print "[%05d/%05d] Thread created: handle = %08x, start addr = %08x." % (pid, tid, handle, start_address)
         process = self.processes[pid]
         thread = Thread(tid, handle, process, start_address)
         process.threads[tid] = thread
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_thread_create(thread)
         except AttributeError, e:
             if 'on_thread_create' not in e.message:
@@ -129,12 +132,10 @@ class Debugger(_bones.Debugger):
     def _on_thread_exit(self, pid, tid, exit_status):
         """The DbgExitThreadStateChange handler."""
         
-        # print "[%05d/%05d] Thread exited, status %08x." % (pid, tid, exit_status)
         process = self.processes[pid]
         thread = process.threads[tid]
         thread.exit_status = exit_status
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_thread_exit(thread)
         except AttributeError, e:
             if 'on_thread_exit' not in e.message:
@@ -145,10 +146,8 @@ class Debugger(_bones.Debugger):
     def _on_module_unload(self, pid, base_address):
         """The DbgUnloadDllStateChange handler."""
         
-        # print "[%05d] Module unloaded: %08x." % (pid, base_address)
         process = self.processes[pid]
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_module_unload(process.modules[base_address])
         except AttributeError, e:
             if 'on_module_unload' not in e.message:
@@ -159,11 +158,9 @@ class Debugger(_bones.Debugger):
     def _on_process_exit(self, pid, exit_status):
         """The DbgExitProcessStateChange handler."""
         
-        # print "[%05d] Process exited, status %08x." % (pid, exit_status)
         process = self.processes[pid]
         process.exit_status = exit_status
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_process_exit(self.processes[pid])
         except AttributeError, e:
             if 'on_process_exit' not in e.message:
@@ -190,7 +187,6 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_breakpoint(thread)
         except AttributeError, e:
             if 'on_breakpoint' not in e.message:
@@ -203,7 +199,6 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         try:
-            # Return result ignored; always DBG_CONTINUE
             self.on_single_step(thread)
         except AttributeError, e:
             if 'on_single_step' not in e.message:
