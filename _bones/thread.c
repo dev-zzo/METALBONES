@@ -149,25 +149,25 @@ get_exit_status(PyBones_ThreadObject *self, void *closure)
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
-static PyObject *
+static int
 set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
-        return NULL;
+        return -1;
     }
 
     if (PyInt_CheckExact(value)) {
         self->exit_status = (NTSTATUS)PyInt_AsLong(value);
-        Py_RETURN_NONE;
+        return 0;
     }
     if (PyLong_CheckExact(value)) {
         self->exit_status = (NTSTATUS)PyLong_AsUnsignedLong(value);
-        Py_RETURN_NONE;
+        return 0;
     }
 
     PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
-    return NULL;
+    return -1;
 }
 
 static PyObject *
@@ -186,23 +186,20 @@ get_context(PyBones_ThreadObject *self, void *closure)
     return context;
 }
 
-static PyObject *
+static int
 set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
-        return NULL;
+        return -1;
     }
 
     if (!PyBones_Context_Check(value)) {
         PyErr_SetString(PyExc_TypeError, "Expected an instance of Context.");
-        return NULL;
+        return -1;
     }
 
-    if (_PyBones_Context_Set(value, self->handle) < 0) {
-        return NULL;
-    }
-    Py_RETURN_NONE;
+    return _PyBones_Context_Set(value, self->handle);
 }
 
 static PyGetSetDef getseters[] = {
