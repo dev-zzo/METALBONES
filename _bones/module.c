@@ -101,7 +101,7 @@ get_entry_point(PyBones_ModuleObject *self, void *closure)
         return NULL;
     }
 
-    return PyLong_FromUnsignedLong((char *)self->base_address + headers.OptionalHeader.AddressOfEntryPoint);
+    return PyLong_FromUnsignedLong((unsigned long)((char *)self->base_address + headers.OptionalHeader.AddressOfEntryPoint));
 }
 
 static PyGetSetDef getseters[] = {

@@ -253,6 +253,26 @@ PyBones_Process_QueryMemory(PyObject *self, void *address)
         type);
 }
 
+int
+PyBones_Process_ProtectMemory(PyObject *self, void *address, unsigned size, unsigned protect, unsigned *oldprotect)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    NTSTATUS status;
+
+    status = NtProtectVirtualMemory(
+        _self->handle,
+        &address,
+        &size,
+        protect,
+        oldprotect);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return -1;
+    }
+
+    return 0;
+}
+
 PyObject *
 PyBones_Process_GetSectionFileName(PyObject *self, void *address)
 {
@@ -367,6 +387,30 @@ query_memory(PyObject *self, PyObject *args)
     return PyBones_Process_QueryMemory(self, address);
 }
 
+PyDoc_STRVAR(protect_memory__doc__,
+"protect_memory(self, address, size, protect) -> long\n\n\
+Manipulate memory protection flags.");
+
+static PyObject *
+protect_memory(PyObject *self, PyObject *args)
+{
+    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
+    PVOID address;
+    unsigned size;
+    unsigned protect;
+    unsigned oldprotect;
+
+    if (!PyArg_ParseTuple(args, "kkk", &address, &size, &protect)) {
+        return NULL;
+    }
+
+    if (PyBones_Process_ProtectMemory(self, address, size, protect, &oldprotect) < 0) {
+        return NULL;
+    }
+
+    return PyLong_FromUnsignedLong(oldprotect);
+}
+
 PyDoc_STRVAR(query_section_file_name__doc__,
 "query_section_file_name(self, address) -> string\n\n\
 Query the file name of a section at the given address.");
@@ -390,6 +434,7 @@ static PyMethodDef methods[] = {
     { "read_memory", (PyCFunction)read_memory, METH_VARARGS, read_memory__doc__ },
     { "write_memory", (PyCFunction)write_memory, METH_VARARGS, write_memory__doc__ },
     { "query_memory", (PyCFunction)query_memory, METH_VARARGS, query_memory__doc__ },
+    { "protect_memory", (PyCFunction)protect_memory, METH_VARARGS, protect_memory__doc__ },
     { "query_section_file_name", (PyCFunction)query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
     {NULL}  /* Sentinel */
 };
@@ -510,3 +555,41 @@ PyTypeObject PyBones_Process_Type = {
     new,  /* tp_new */
 };
 
+int
+init_Process(PyObject* m)
+{
+    int rv;
+    PyObject *tp_dict;
+
+    tp_dict = PyDict_New();
+    PyDict_SetItemString(tp_dict, "PAGE_NOACCESS",
+        PyLong_FromUnsignedLong(0x00000001));
+    PyDict_SetItemString(tp_dict, "PAGE_READONLY",
+        PyLong_FromUnsignedLong(0x00000002));
+    PyDict_SetItemString(tp_dict, "PAGE_READWRITE",
+        PyLong_FromUnsignedLong(0x00000004));
+    PyDict_SetItemString(tp_dict, "PAGE_WRITECOPY",
+        PyLong_FromUnsignedLong(0x00000008));
+    PyDict_SetItemString(tp_dict, "PAGE_EXECUTE",
+        PyLong_FromUnsignedLong(0x00000010));
+    PyDict_SetItemString(tp_dict, "PAGE_EXECUTE_READ",
+        PyLong_FromUnsignedLong(0x00000020));
+    PyDict_SetItemString(tp_dict, "PAGE_EXECUTE_READWRITE",
+        PyLong_FromUnsignedLong(0x00000040));
+    PyDict_SetItemString(tp_dict, "PAGE_EXECUTE_WRITECOPY",
+        PyLong_FromUnsignedLong(0x00000080));
+    PyDict_SetItemString(tp_dict, "PAGE_GUARD",
+        PyLong_FromUnsignedLong(0x00000100));
+    PyDict_SetItemString(tp_dict, "PAGE_NOCACHE",
+        PyLong_FromUnsignedLong(0x00000200));
+    PyDict_SetItemString(tp_dict, "PAGE_WRITECOMBINE",
+        PyLong_FromUnsignedLong(0x00000400));
+    PyBones_Process_Type.tp_dict = tp_dict;
+
+    rv = PyType_Ready(&PyBones_Process_Type);
+    if (rv < 0)
+        return rv;
+
+    Py_INCREF(&PyBones_Process_Type);
+    return PyModule_AddObject(m, "Process", (PyObject *)&PyBones_Process_Type);
+}

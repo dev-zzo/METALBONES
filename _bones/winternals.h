@@ -435,6 +435,12 @@ NTSYSAPI NTSTATUS NTAPI NtQueryVirtualMemory(
     ULONG MemoryInformationLength,
     PULONG ReturnLength);
 
+NTSYSAPI NTSTATUS NTAPI NtProtectVirtualMemory(
+    HANDLE ProcessHandle,
+    PVOID *BaseAddress,
+    SIZE_T *NumberOfBytesToProtect,
+    ULONG NewAccessProtection,
+    PULONG OldAccessProtection);
 
 typedef enum _FILE_INFORMATION_CLASS {
     FileDirectoryInformation = 1,

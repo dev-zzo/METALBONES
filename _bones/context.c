@@ -137,7 +137,7 @@ _PyBones_Context_Get(PyObject *self, HANDLE thread)
     PyBones_ContextObject *_self = (PyBones_ContextObject *)self;
     NTSTATUS status;
 
-    _self->ctx.ContextFlags = CONTEXT_ALL;
+    _self->ctx.ContextFlags = CONTEXT_ALL|CONTEXT_DEBUG_REGISTERS;
     status = NtGetContextThread(thread, &_self->ctx);
     if (!NT_SUCCESS(status)) {
         PyBones_RaiseNtStatusError(status);

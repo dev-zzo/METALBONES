@@ -16,6 +16,8 @@ static PyMethodDef methods[] = {
 
 int
 init_Debugger(PyObject* m);
+int
+init_Process(PyObject* m);
 
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
@@ -93,8 +95,8 @@ init_bones(void)
     PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 
     init_Debugger(m);
+    init_Process(m);
     ready_add_type(m, "Thread", &PyBones_Thread_Type);
-    ready_add_type(m, "Process", &PyBones_Process_Type);
     ready_add_type(m, "EFlags", &PyBones_EFlags_Type);
     PyBones_Context_Type.tp_new = PyType_GenericNew;
     ready_add_type(m, "Context", &PyBones_Context_Type);
