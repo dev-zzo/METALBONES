@@ -53,12 +53,23 @@ class Runner(bones.Debugger):
         if self.initial_process is None:
             self.initial_process = p
 
-    def on_process_created(self, p):
-        logging.info('[%05d] Process created.', p.id)
-        logging.info('[%05d] Entry point = %08x.', p.id, p.image.entry_point)
+    def on_process_created(self, process):
+        logging.info('[%05d] Process created.', process.id)
+        logging.info('[%05d] Entry point = %08x.', process.id, process.image.entry_point)
+        process.breakpoint(process.image.entry_point).arm()
+        # initial_thread = process.threads.values()[0]
+        # context = initial_thread.context
+        # logging.info('%08x %08x %08x %08x %08x %08x',
+            # context.dr0, context.dr1, context.dr2, context.dr3, context.dr6, context.dr7)
+        # context.dr0 = process.image.entry_point
+        # context.dr7 = 0x000f0101
+        # initial_thread.context = context
+        # context = initial_thread.context
+        # logging.info('%08x %08x %08x %08x %08x %08x',
+            # context.dr0, context.dr1, context.dr2, context.dr3, context.dr6, context.dr7)
 
-    def on_thread_create(self, t):
-        logging.info('[%05d/%05d] Thread created.', t.process.id, t.id)
+    def on_thread_create(self, thread):
+        logging.info('[%05d/%05d] Thread created.', thread.process.id, thread.id)
 
     def on_thread_exit(self, t):
         logging.info('[%05d/%05d] Thread exited, status %08x.', t.process.id, t.id, t.exit_status)
@@ -95,20 +106,24 @@ class Runner(bones.Debugger):
         self.prepare_exception_report(thread, exc_info)
         return bones.Debugger.DBG_EXCEPTION_NOT_HANDLED
 
-    def on_breakpoint(self, thread):
+    def on_breakpoint(self, thread, context, breakpoint):
         process = thread.process
         logging.info('[%05d/%05d] Breakpoint hit.', process.id, thread.id)
 
         if not self.ldr_breakpoint_hit:
-            loc = process.get_location_from_va(thread.context.eip)
+            loc = process.get_location_from_va(context.eip)
             if loc.module is not None and loc.module.name.lower() == 'ntdll.dll':
                 logging.info('[%05d/%05d] Initial breakpoint in LdrpInitializeProcess, ignoring.', process.id, thread.id)
                 self.ldr_breakpoint_hit = True
                 return
 
         logging.critical('[%05d/%05d] Not handled by the target; reporting.', thread.process.id, thread.id)
-        self.prepare_breakpoint_report(thread)
+        self.prepare_breakpoint_report(thread, context)
         self.done = True
+
+    def on_single_step(self, thread):
+        process = thread.process
+        logging.info('[%05d/%05d] Single step hit.', process.id, thread.id)
 
     def run(self):
         if not self.args.enable_debug_heap:
@@ -142,10 +157,8 @@ class Runner(bones.Debugger):
             'code': exc_info.code,
             'args': exc_info.args,
             }
-    def prepare_breakpoint_report(self, thread):
+    def prepare_breakpoint_report(self, thread, context):
         self.report['status'] = 'breakpoint'
-        context = thread.context
-        context.eip -= 1
         loc = thread.process.get_location_from_va(context.eip)
         self.report['at'] = str(loc)
         self.report['hash'] = hashlib.md5(self.report['status'] + self.report['at']).hexdigest()
@@ -172,14 +185,29 @@ class RunnerJob:
 
 class RunnerPool:
     """Handles queueing of RunnerJobs"""
-    def __init__(self, size = 4):
+    def __init__(self, size=4):
         self.size = size
         self.pool = set()
         self.queue = collections.deque()
-        
+
+    def get_active_count(self):
+        return len(self.pool)
+
     def enqueue(self, job):
-        self.queue.append(job)
-    
+        try:
+            while self.get_active_count() < self.size:
+                j = self.queue.popleft()
+                self.pool.add(j)
+                j.run()
+        except IndexError:
+            # Hit when queue is empty
+            pass
+        if self.get_active_count() < self.size:
+            self.pool.add(job)
+            job.run()
+        else:
+            self.queue.append(job)
+
     def poll(self):
         retired = []
         for j in self.pool:
@@ -189,13 +217,7 @@ class RunnerPool:
                 retired.append(j)
         for j in retired:
             self.pool.remove(j)
-        try:
-            while len(self.pool) < self.size:
-                j = self.queue.popleft()
-                self.pool.add(j)
-                j.run()
-        except IndexError:
-            pass
+        return retired
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Runner: run the target and control the execution.')

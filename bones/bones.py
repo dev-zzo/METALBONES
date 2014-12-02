@@ -17,26 +17,60 @@ class Location:
             return '%s+%08x' % (self.module.name, self.rva - self.module.base_address)
         return '%08x' % self.rva
 
+class Breakpoint:
+    def __init__(self, process, address):
+        self.process = process
+        self.address = address
+        self.old_byte = None
+    def is_armed(self):
+        return self.old_byte is not None
+    def arm(self):
+        self.old_byte = self.process.read_memory(self.address, 1)
+        self._write_byte(self.address, "\xCC")
+        byte = self.process.read_memory(self.address, 1)
+        if byte != "\xCC":
+            print "lolwut, failed to set a bp"
+    def disarm(self):
+        self._write_byte(self.address, self.old_byte)
+        self.old_byte = None
+    def _write_byte(self, address, value):
+        oldprotect = self.process.protect_memory(address, 1, Process.PAGE_EXECUTE_READWRITE)
+        # No need to flush -- x86 doesn't need it.
+        self.process.write_memory(address, 1, value)
+        self.process.protect_memory(address, 1, oldprotect)
+
 class Process(_bones.Process):
     """An abstraction representing a debugged process."""
     def __init__(self, pid, process_handle, base_address):
         _bones.Process.__init__(self, pid, process_handle, base_address)
         self.image = None
-    
+        self.breakpoints = {}
+
     def get_module_from_va(self, address):
         for m in self.modules.values():
             base = m.base_address
             if base <= address < (base + m.mapped_size):
                 return m
         return None
-    
+
     def get_location_from_va(self, address):
         return Location(address, self.get_module_from_va(address))
+
+    def breakpoint(self, address):
+        address = long(address)
+        try:
+            return self.breakpoints[address]
+        except KeyError:
+            b = Breakpoint(self, address)
+            self.breakpoints[address] = b
+            return b
 #
 
 class Thread(_bones.Thread):
     """An abstraction representing a thread within a debugged process."""
-    
+    def __init__(self, tid, handle, process, start_address):
+        _bones.Thread.__init__(self, tid, handle, process, start_address)
+        self.is_initial = False
 #
 
 class Module(_bones.Module):
@@ -96,6 +130,7 @@ class Debugger(_bones.Debugger):
         self._on_module_load(pid, base_address)
         process.image = process.modules[base_address]
         self._on_thread_create(pid, tid, thread_handle, start_address)
+        process.threads[tid].is_initial = True
         try:
             self.on_process_created(process)
         except AttributeError, e:
@@ -186,8 +221,17 @@ class Debugger(_bones.Debugger):
         
         process = self.processes[pid]
         thread = process.threads[tid]
+        context = thread.context
+        context.eip -= 1
+        b = None
         try:
-            self.on_breakpoint(thread)
+            b = process.breakpoints[context.eip]
+            b.disarm()
+            thread.context = context
+        except KeyError:
+            pass
+        try:
+            self.on_breakpoint(thread, context, b)
         except AttributeError, e:
             if 'on_breakpoint' not in e.message:
                 raise
