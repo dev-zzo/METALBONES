@@ -2,7 +2,6 @@
 #include <Windows.h>
 
 #include "internal.h"
-#include "winternals.h"
 
 typedef struct {
     PyObject_HEAD

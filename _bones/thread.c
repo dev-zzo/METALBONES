@@ -2,7 +2,7 @@
 #include <Windows.h>
 
 #include "internal.h"
-#include "winternals.h"
+#include "ntdll.h"
 
 int
 _PyBones_Context_Get(PyObject *self, HANDLE Thread);

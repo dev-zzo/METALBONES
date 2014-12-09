@@ -41,7 +41,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>false</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;BONES_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>c:\Python27\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>c:\Python27\include;$(SolutionDir)ntcore</AdditionalIncludeDirectories>
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -51,7 +51,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalLibraryDirectories>c:\Python27\libs;$(ProjectDir)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>c:\Python27\libs;$(SolutionDir)ntcore</AdditionalLibraryDirectories>
       <AdditionalDependencies>python27.lib;ntdll.lib;kernel32.lib</AdditionalDependencies>
       <LinkTimeCodeGeneration>Default</LinkTimeCodeGeneration>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
@@ -71,13 +71,12 @@
     <ClCompile Include="exinfo.c" />
     <ClCompile Include="module.c" />
     <ClCompile Include="process.c" />
+    <ClCompile Include="toolbox.c" />
     <ClCompile Include="thread.c" />
-    <ClCompile Include="whelpers.c" />
     <ClCompile Include="_bones.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="whelpers.h" />
-    <ClInclude Include="winternals.h" />
+    <ClInclude Include="..\ntcore\ntdll.h" />
     <ClInclude Include="internal.h" />
     <ClInclude Include="_bones.h" />
   </ItemGroup>
