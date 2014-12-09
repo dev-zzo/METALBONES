@@ -23,6 +23,8 @@ class CFBStorage:
     def __init__(self, name):
         self.name = name
         self.subobjects = []
+    def __str__(self):
+        return "Storage '%s' (%d children)" % (self.name, len(self.subobjects))
 
 class CFBRootEntry(CFBStorage):
     def __init__(self):
@@ -31,10 +33,14 @@ class CFBRootEntry(CFBStorage):
 class CFBStream:
     def __init__(self, name):
         self.name = name
-    @classmethod
+    def __str__(self):
+        return "Stream '%s'" % (self.name)
+    def parse(self, data):
+        self.raw_data = data
+    @staticmethod
     def create(name):   
         return CFBStream._registry[name]()
-    @classmethod
+    @staticmethod
     def register(name, type):
         CFBStream._registry[name] = type
     _registry = {}
@@ -55,7 +61,7 @@ class _FileBackend:
         self.fp.write(data)
 
 class _StringBackend:
-    """Support sector r/w on a string"""
+    """Support sector r/w on a string -- MiniFAT"""
     def __init__(self, data, sector_size):
         self.data = data
         self.sector_size = sector_size
@@ -65,20 +71,6 @@ class _StringBackend:
 
     def write_sector(self, sector_id, data):
         self.data[self.sector_size * sector_id : self.sector_size * (sector_id + 1)] = data
-
-class _StringStream:
-    def __init__(self, data):
-        self.data = data
-        self.ptr = 0
-    def read(self, size):
-        result = self.data[self.ptr:self.ptr+size]
-        self.ptr += size
-        return result
-    def write(self, data):
-        self.data[self.ptr:self.ptr+len(data)] = data
-        self.ptr += len(data)
-    def seek(self, offset):
-        self.ptr = offset
 
 class _FatTable:
     def __init__(self, chains=None):
@@ -120,6 +112,43 @@ class _FatTable:
             size -= 1
 #
 
+class _DirEntry:
+    def __init__(self):
+        self.name = u''
+        self.object_type = OBJTYPE_UNKNOWN
+        self.color = 1
+        self.left_sibling_id = NO_STREAM
+        self.right_sibling_id = NO_STREAM
+        self.child_id = NO_STREAM
+        self.clsid = "\x00" * 16
+        self.state_bits = 0
+        self.created_time = 0
+        self.modified_time = 0
+        self.stream_start_sector = 0
+        self.stream_size = 0
+    def __str__(self):
+        return 'Entry: "%s" (%d bytes), type %d' % (self.name, self.stream_size, self.object_type)
+    def unpack(self, data):
+        (name, name_length, self.object_type, self.color, 
+            self.left_sibling_id, self.right_sibling_id, self.child_id,
+            self.clsid, self.state_bits, self.created_time, self.modified_time,
+            self.stream_start_sector, self.stream_size) = _DirEntry.__format.unpack(data)
+        self.name = name[:name_length - 2].decode('utf-16', 'ignore') if name_length > 0 else u''
+    def pack(self):
+        name = (self.name + '\0').encode('utf-16', 'ignore')
+        name_length = len(name)
+        return _DirEntry.__format.pack(name, name_length, self.object_type, self.color,
+            self.left_sibling_id, self.right_sibling_id, self.child_id,
+            self.clsid, self.state_bits, self.created_time, self.modified_time,
+            self.stream_start_sector, self.stream_size)
+    __format = struct.Struct('<64sHBBIII16sIQQIQ')
+
+def pieces(s, length):
+    start = 0
+    while start < len(s):
+        yield s[start:start + length]
+        start += length
+
 def stream_read(sector_id, fat, be):
     sectors = []
     while sector_id != END_OF_CHAIN:
@@ -128,25 +157,26 @@ def stream_read(sector_id, fat, be):
     return ''.join(sectors)
 
 def parse_entry(directory, entry, parent=None):
-    if entry['object_type'] == OBJTYPE_STREAM:
+    if entry.object_type == OBJTYPE_STREAM:
         try:
-            n = CFBStream.create(entry['name'])
+            n = CFBStream.create(entry.name)
         except KeyError:
-            n = CFBStream()
-    elif entry['object_type'] == OBJTYPE_STORAGE:
-        n = CFBStorage(entry['name'])
-    elif entry['object_type'] == OBJTYPE_ROOT_STORAGE:
+            n = CFBStream(entry.name)
+        n.parse(entry.data)
+    elif entry.object_type == OBJTYPE_STORAGE:
+        n = CFBStorage(entry.name)
+    elif entry.object_type == OBJTYPE_ROOT_STORAGE:
         n = CFBRootEntry()
     else:
         raise ValueError('Unknown object type')
     if parent is not None:
         parent.subobjects.append(n)
-    if entry['child_id'] != NO_STREAM:
-        parse_entry(directory, directory[entry['child_id']], n)
-    if entry['left_sibling_id'] != NO_STREAM:
-        parse_entry(directory, directory[entry['left_sibling_id']], parent)
-    if entry['right_sibling_id'] != NO_STREAM:
-        parse_entry(directory, directory[entry['right_sibling_id']], parent)
+    if entry.child_id != NO_STREAM:
+        parse_entry(directory, directory[entry.child_id], n)
+    if entry.left_sibling_id != NO_STREAM:
+        parse_entry(directory, directory[entry.left_sibling_id], parent)
+    if entry.right_sibling_id != NO_STREAM:
+        parse_entry(directory, directory[entry.right_sibling_id], parent)
     return n
     
 def load(path):
@@ -190,56 +220,43 @@ def load(path):
         fat_sector += 1
     fat = _FatTable(chains=fat_data)
     
-    # Read in MiniFAT
-    print 'MiniFAT start: %d' % minifat_start_sector
-    minifat_raw = stream_read(minifat_start_sector, fat, be)
-    unpack_format = '<' + str(len(minifat_raw) // 4) + 'I'
-    minifat_data = list(struct.unpack(unpack_format, minifat_raw))
-    minifat = _FatTable(chains=minifat_data)
-    mini_stream_start_sector = None
-    
     # Read in Directory
     directory_raw = stream_read(directory_start_sector, fat, be)
-    stream = _StringStream(directory_raw)
     directory = []
     root_entry = None
-    try:
-        while True:
-            fields = struct.unpack('<64sHBBIII16sIQQIQ', stream.read(128))
-            name_length = fields[1]
-            entry_name = fields[0][:name_length - 2].decode('utf-16', 'ignore') if name_length > 0 else ''
-            entry_object_type = fields[2]
-            if entry_object_type == OBJTYPE_UNKNOWN:
-                continue
-            print 'Entry: "%s"' % entry_name
-            entry = {
-                'name': entry_name,
-                'object_type': entry_object_type,
-                'color': fields[3],
-                'left_sibling_id': fields[4],
-                'right_sibling_id': fields[5],
-                'child_id': fields[6],
-                #entry_clsid = fields[7]
-                #entry_state_bits = fields[8]
-                #entry_created_time = fields[9]
-                #entry_modified_time = fields[10]
-                'stream_start_sector': fields[11],
-                'stream_size': fields[12],
-                }
-            print 'Type: %d' % entry['object_type']
-            print 'Left: %d Right: %d Child: %d' % (entry['left_sibling_id'], entry['right_sibling_id'], entry['child_id'])
-            directory.append(entry)
-            if entry['object_type'] == OBJTYPE_ROOT_STORAGE:
-                root_entry = entry
-                mini_stream_start_sector = entry['stream_start_sector']
-            print
-    except:
-        pass
+    for piece in pieces(directory_raw, 128):
+        entry = _DirEntry()
+        entry.unpack(piece)
+        if entry.object_type == OBJTYPE_UNKNOWN:
+            continue
+        print str(entry)
+        directory.append(entry)
+        if entry.object_type == OBJTYPE_ROOT_STORAGE:
+            root_entry = entry
+            # Read in MiniFAT
+            if root_entry.stream_start_sector != END_OF_CHAIN:
+                minifat_raw = stream_read(minifat_start_sector, fat, be)
+                unpack_format = '<' + str(len(minifat_raw) // 4) + 'I'
+                minifat_data = list(struct.unpack(unpack_format, minifat_raw))
+                minifat = _FatTable(chains=minifat_data)
+                mbe = _StringBackend(stream_read(root_entry.stream_start_sector, fat, be), minifat_sector_size)
 
+    # Read stream data
+    for entry in directory:
+        if entry.object_type != OBJTYPE_STREAM:
+            continue
+        if entry.stream_size < minifat_stream_cutoff:
+            data = stream_read(entry.stream_start_sector, minifat, mbe)
+        else:
+            data = stream_read(entry.stream_start_sector, fat, be)
+        entry.data = data
+    return parse_entry(directory, root_entry)
+    
 def save(path, root):
     pass
 
 if __name__ == '__main__':
     print "Testing"
-    load('apc.doc')
+    d = load('2014723154316.xls')
+    print d
 

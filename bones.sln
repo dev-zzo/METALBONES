@@ -5,6 +5,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "_bones", "_bones\_bones.vcx
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "victim", "victim\victim.vcxproj", "{2F0C5857-3146-4593-951E-9F42315656A9}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "neurax", "neurax\neurax.vcxproj", "{6AE294A7-C11A-437E-82DA-66F55AA4607F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Release|Win32 = Release|Win32
@@ -14,6 +16,8 @@ Global
 		{7B7DCD35-1E19-47EA-A683-40782A91B03E}.Release|Win32.Build.0 = Release|Win32
 		{2F0C5857-3146-4593-951E-9F42315656A9}.Release|Win32.ActiveCfg = Release|Win32
 		{2F0C5857-3146-4593-951E-9F42315656A9}.Release|Win32.Build.0 = Release|Win32
+		{6AE294A7-C11A-437E-82DA-66F55AA4607F}.Release|Win32.ActiveCfg = Release|Win32
+		{6AE294A7-C11A-437E-82DA-66F55AA4607F}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
