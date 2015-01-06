@@ -6,7 +6,6 @@ import os
 import pickle
 import hashlib
 import argparse
-import subprocess
 import collections
 import logging
 import bones
@@ -41,7 +40,7 @@ class Runner(bones.Debugger):
         self.done = False
         self.initial_process_exited = False
         self.timed_out = False
-        self.report = {}
+        self.report = { 'status': 'nothing' }
     
     def on_timeout(self):
         self.report['status'] = 'timeout'
@@ -56,17 +55,7 @@ class Runner(bones.Debugger):
     def on_process_created(self, process):
         logging.info('[%05d] Process created.', process.id)
         logging.info('[%05d] Entry point = %08x.', process.id, process.image.entry_point)
-        process.breakpoint(process.image.entry_point).arm()
-        # initial_thread = process.threads.values()[0]
-        # context = initial_thread.context
-        # logging.info('%08x %08x %08x %08x %08x %08x',
-            # context.dr0, context.dr1, context.dr2, context.dr3, context.dr6, context.dr7)
-        # context.dr0 = process.image.entry_point
-        # context.dr7 = 0x000f0101
-        # initial_thread.context = context
-        # context = initial_thread.context
-        # logging.info('%08x %08x %08x %08x %08x %08x',
-            # context.dr0, context.dr1, context.dr2, context.dr3, context.dr6, context.dr7)
+        # process.get_breakpoint(process.image.entry_point).arm()
 
     def on_thread_create(self, thread):
         logging.info('[%05d/%05d] Thread created.', thread.process.id, thread.id)
@@ -108,12 +97,12 @@ class Runner(bones.Debugger):
 
     def on_breakpoint(self, thread, context, breakpoint):
         process = thread.process
-        logging.info('[%05d/%05d] Breakpoint hit.', process.id, thread.id)
+        logging.info('[%05d/%05d] Breakpoint hit at %08x.', process.id, thread.id, context.eip)
 
         if not self.ldr_breakpoint_hit:
             loc = process.get_location_from_va(context.eip)
             if loc.module is not None and loc.module.name.lower() == 'ntdll.dll':
-                logging.info('[%05d/%05d] Initial breakpoint in LdrpInitializeProcess, ignoring.', process.id, thread.id)
+                logging.info('[%05d/%05d] Initial breakpoint in LdrpInitializeProcess, continuing.', process.id, thread.id)
                 self.ldr_breakpoint_hit = True
                 return
 
@@ -129,6 +118,9 @@ class Runner(bones.Debugger):
         if not self.args.enable_debug_heap:
             # http://msdn.microsoft.com/en-us/library/windows/hardware/ff545528%28v=vs.85%29.aspx
             os.environ['_NO_DEBUG_HEAP'] = '1'
+            logging.info('RTL Debug Heap disabled.')
+        else:
+            logging.info('RTL Debug Heap ENABLED.')
         
         if self.args.working_dir is not None:
             os.chdir(self.args.working_dir)
@@ -151,7 +143,7 @@ class Runner(bones.Debugger):
         context = thread.context
         loc = thread.process.get_location_from_va(context.eip)
         self.report['at'] = str(loc)
-        self.report['hash'] = hashlib.md5(self.report['status'] + self.report['at']).hexdigest()
+        self.report['hash'] = hashlib.md5(self.report['status'] + self.report['at'] + str(exc_info.code) + str(exc_info.args)).hexdigest()
         self.report['context'] = str(context)
         self.report['info'] = {
             'code': exc_info.code,
@@ -163,61 +155,6 @@ class Runner(bones.Debugger):
         self.report['at'] = str(loc)
         self.report['hash'] = hashlib.md5(self.report['status'] + self.report['at']).hexdigest()
         self.report['context'] = str(context)
-
-class RunnerJob:
-    """Contains a job item to be run via a runner process"""
-    def __init__(self, cmdline, options={}):
-        self.args = ['python', 'runner.py', cmdline]
-        for opt in options.keys():
-            self.args.append('--%s=%s' % (opt, options[opt]))
-        self.proc = None
-        self.report = None
-    
-    def run(self):
-        self.proc = subprocess.Popen(self.args, stdout=subprocess.PIPE, bufsize=-1, universal_newlines=True)
-        
-    def poll(self):
-        rc = self.proc.poll()
-        if rc is None:
-            return False
-        self.report = pickle.load(self.proc.stdout)
-        return True
-
-class RunnerPool:
-    """Handles queueing of RunnerJobs"""
-    def __init__(self, size=4):
-        self.size = size
-        self.pool = set()
-        self.queue = collections.deque()
-
-    def get_active_count(self):
-        return len(self.pool)
-
-    def enqueue(self, job):
-        try:
-            while self.get_active_count() < self.size:
-                j = self.queue.popleft()
-                self.pool.add(j)
-                j.run()
-        except IndexError:
-            # Hit when queue is empty
-            pass
-        if self.get_active_count() < self.size:
-            self.pool.add(job)
-            job.run()
-        else:
-            self.queue.append(job)
-
-    def poll(self):
-        retired = []
-        for j in self.pool:
-            if j is None:
-                continue
-            if j.poll():
-                retired.append(j)
-        for j in retired:
-            self.pool.remove(j)
-        return retired
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Runner: run the target and control the execution.')
@@ -233,6 +170,10 @@ if __name__ == "__main__":
         help='where to output log text, default=stderr',
         type=argparse.FileType('w'),
         default=sys.stderr)
+    parser.add_argument('--report',
+        help='where to output the report, default=stdout',
+        type=argparse.FileType('w'),
+        default=sys.stdout)
     parser.add_argument('--enable-debug-heap',
         help='allow RTL to use debug heap',
         action='store_true')
@@ -245,5 +186,5 @@ if __name__ == "__main__":
     
     r = Runner(args)
     r.run()
-    pickle.dump(r.report, sys.stdout)
-    sys.stdout.flush()
+    pickle.dump(r.report, args.report)
+    args.report.flush()
