@@ -3,6 +3,9 @@
 
 #include "internal.h"
 
+/* Base class for our exceptions */
+PyObject *PyBones_BonesException;
+
 /* Win32 system error code exception */
 PyObject *PyBones_Win32Error;
 
@@ -86,11 +89,15 @@ init_bones(void)
         methods,
         "A simple Win32 debugger module.");
 
-    PyBones_Win32Error = PyErr_NewException("_bones.Win32Error", NULL, NULL);
+    PyBones_BonesException = PyErr_NewException("_bones.BonesException", NULL, NULL);
+    Py_INCREF(PyBones_BonesException);
+    PyModule_AddObject(m, "BonesException", PyBones_BonesException);
+
+    PyBones_Win32Error = PyErr_NewException("_bones.Win32Error", PyBones_BonesException, NULL);
     Py_INCREF(PyBones_Win32Error);
     PyModule_AddObject(m, "Win32Error", PyBones_Win32Error);
 
-    PyBones_NtStatusError = PyErr_NewException("_bones.NtStatusError", NULL, NULL);
+    PyBones_NtStatusError = PyErr_NewException("_bones.NtStatusError", PyBones_BonesException, NULL);
     Py_INCREF(PyBones_NtStatusError);
     PyModule_AddObject(m, "NtStatusError", PyBones_NtStatusError);
 

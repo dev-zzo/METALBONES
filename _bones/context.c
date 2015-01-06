@@ -137,7 +137,7 @@ _PyBones_Context_Get(PyObject *self, HANDLE thread)
     PyBones_ContextObject *_self = (PyBones_ContextObject *)self;
     NTSTATUS status;
 
-    _self->ctx.ContextFlags = CONTEXT_ALL|CONTEXT_DEBUG_REGISTERS;
+    _self->ctx.ContextFlags = CONTEXT_ALL;
     status = NtGetContextThread(thread, &_self->ctx);
     if (!NT_SUCCESS(status)) {
         PyBones_RaiseNtStatusError(status);
@@ -159,6 +159,7 @@ _PyBones_Context_Set(PyObject *self, HANDLE thread)
 
     _self->ctx.EFlags = _self->eflags->All;
 
+    _self->ctx.ContextFlags = CONTEXT_ALL;
     status = NtSetContextThread(thread, &_self->ctx);
     if (!NT_SUCCESS(status)) {
         PyBones_RaiseNtStatusError(status);
@@ -242,18 +243,23 @@ context_set_reg(PyBones_ContextObject *self, PyObject *value, int id)
     }
 
     if (id & REG_LONG32) {
-        if (!PyInt_Check(value) && !PyLong_Check(value)) {
-            PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
-            return -1;
+        if (PyInt_CheckExact(value)) {
+            *(long *)((char *)&self->ctx + offset) = PyInt_AS_LONG(value);
+            return 0;
         }
-    }
-    if (id & REG_LONGDBL) {
-        if (!PyFloat_Check(value)) {
-            PyErr_SetString(PyExc_TypeError, "Expected an instance of float.");
-            return -1;
+        if (PyLong_CheckExact(value)) {
+            *(unsigned long *)((char *)&self->ctx + offset) = PyLong_AsUnsignedLong(value);
+            return 0;
         }
+        PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
     }
-    return 0;
+    else if (id & REG_LONGDBL) {
+        if (!PyFloat_CheckExact(value)) {
+            return 0;
+        }
+        PyErr_SetString(PyExc_TypeError, "Expected an instance of float.");
+    }
+    return -1;
 }
 
 static PyObject *

@@ -1,12 +1,18 @@
 """
-Layer 2 of the METALBONES core.
+Layer 2 of the METALBONES core -- Python wrappers.
 
 This wraps CPython objects and adds more functionality that
-can be easily implemented in Python instead of C.
+can be more easily implemented in Python than in C.
 """
 
 import _bones
 import os.path
+
+class BonesError(_bones.BonesException):
+    pass
+
+class InvalidOperationError(BonesError):
+    pass
 
 class Location:
     def __init__(self, rva, module=None):
@@ -18,32 +24,75 @@ class Location:
         return '%08x' % self.rva
 
 class Breakpoint:
+    """Software breakpoint class.
+    
+    This is used to implement "software breakpoints" via the int3 instruction.
+    """
     def __init__(self, process, address):
         self.process = process
         self.address = address
         self.old_byte = None
+        self.auto_rearm = False
+
+    def __str__(self):
+        return 'Breakpoint at %08x (%s)' % (self.address, 'armed' if self.is_armed() else 'disarmed')
+
     def is_armed(self):
         return self.old_byte is not None
+
     def arm(self):
+        if self.old_byte is not None:
+            raise InvalidOperationError('The breakpoint is already armed.')
         self.old_byte = self.process.read_memory(self.address, 1)
         self._write_byte(self.address, "\xCC")
         byte = self.process.read_memory(self.address, 1)
         if byte != "\xCC":
-            print "lolwut, failed to set a bp"
+            raise BonesError('Failed to arm the breakpoint (read back: %02x)' % ord(byte))
+
     def disarm(self):
-        self._write_byte(self.address, self.old_byte)
+        if self.old_byte is None:
+            raise InvalidOperationError('The breakpoint is not armed.')
+        self._disarm()
         self.old_byte = None
+
+    def _arm(self):
+        self.old_byte = self.process.read_memory(self.address, 1)
+        self._write_byte(self.address, "\xCC")
+
+    def _disarm(self):
+        self._write_byte(self.address, self.old_byte)
+
     def _write_byte(self, address, value):
-        oldprotect = self.process.protect_memory(address, 1, Process.PAGE_EXECUTE_READWRITE)
+        oldprotect = self.process.protect_memory(address, 1, Process.PAGE_READWRITE)
         # No need to flush -- x86 doesn't need it.
         self.process.write_memory(address, 1, value)
         self.process.protect_memory(address, 1, oldprotect)
 
+class HwBreakpoint:
+    """Hardware breakpoint class.
+    
+    This is used to abstract CPU debug registers and provide the interface 
+    similar to how software breakpoints operate.
+    
+    These trigger the single stepping event.
+    """
+
+    EVENT_X = 0
+    EVENT_W = 1
+    EVENT_IO = 2 # Not actually implemented
+    EVENT_RW = 3
+    
+    def __init__(self, process, address, event):
+        self.process = process
+        self.address = address
+        self.event = event
+    
 class Process(_bones.Process):
     """An abstraction representing a debugged process."""
     def __init__(self, pid, process_handle, base_address):
         _bones.Process.__init__(self, pid, process_handle, base_address)
         self.image = None
+        self.initial_thread = None
         self.breakpoints = {}
 
     def get_module_from_va(self, address):
@@ -56,14 +105,14 @@ class Process(_bones.Process):
     def get_location_from_va(self, address):
         return Location(address, self.get_module_from_va(address))
 
-    def breakpoint(self, address):
+    def get_breakpoint(self, address):
         address = long(address)
         try:
             return self.breakpoints[address]
         except KeyError:
-            b = Breakpoint(self, address)
-            self.breakpoints[address] = b
-            return b
+            bp = Breakpoint(self, address)
+            self.breakpoints[address] = bp
+            return bp
 #
 
 class Thread(_bones.Thread):
@@ -127,10 +176,15 @@ class Debugger(_bones.Debugger):
         except AttributeError, e:
             if 'on_process_create' not in e.message:
                 raise
+
         self._on_module_load(pid, base_address)
         process.image = process.modules[base_address]
+
         self._on_thread_create(pid, tid, thread_handle, start_address)
-        process.threads[tid].is_initial = True
+        initial_thread = process.threads[tid]
+        initial_thread.is_initial = True
+        process.initial_thread = initial_thread
+
         try:
             self.on_process_created(process)
         except AttributeError, e:
@@ -223,18 +277,23 @@ class Debugger(_bones.Debugger):
         thread = process.threads[tid]
         context = thread.context
         context.eip -= 1
-        b = None
+        bp = None
         try:
-            b = process.breakpoints[context.eip]
-            b.disarm()
+            bp = process.breakpoints[context.eip]
+            bp.disarm()
             thread.context = context
         except KeyError:
             pass
+
         try:
-            self.on_breakpoint(thread, context, b)
+            self.on_breakpoint(thread, context, bp)
         except AttributeError, e:
             if 'on_breakpoint' not in e.message:
                 raise
+        
+        if bp is not None and bp.auto_rearm:
+            pass
+
         return Debugger.DBG_CONTINUE
 
     def _on_single_step(self, pid, tid):
