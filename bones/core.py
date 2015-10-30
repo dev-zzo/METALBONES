@@ -155,33 +155,46 @@ class Module(_bones.Module):
 #
 
 class Debugger(_bones.Debugger):
-    """The debugger object itself."""
+    """The debugger object.
+    
+    The object provides access to debugging capabilities on the system.
+    """
 
     def __init__(self):
         _bones.Debugger.__init__(self)
 
     # These event handlers are designed to be overridden as needed when subclassing
 
-    def on_process_create(self, process):
+    def on_process_create_begin(self, process):
+        "Called when the process is created (before thread/module creation)"
         pass
-    def on_process_created(self, process):
+    def on_process_create_end(self, process):
+        "Called when the process is created (after thread/module creation)"
         pass
     def on_process_exit(self, process):
+        "Called when the process has exited"
         pass
     def on_thread_create(self, thread):
+        "Called when the thread has been created"
         pass
     def on_thread_exit(self, thread):
+        "Called when the thread has exited"
         pass
     def on_module_load(self, module):
+        "Called when the module has been loaded"
         pass
     def on_module_unload(self, module):
+        "Called when the module has been unloaded"
         pass
-    def on_exception(self, thread, info, first_chance):
-        return Debugger.DBG_EXCEPTION_NOT_HANDLED
     def on_breakpoint(self, thread, context, bp):
+        "Called when a breakpoint exception occurs"
         pass
     def on_single_step(self, thread):
+        "Called when a single step exception occurs"
         pass
+    def on_exception(self, thread, info, first_chance):
+        "Called when an exception occurs (other than SS/BP)"
+        return Debugger.DBG_EXCEPTION_NOT_HANDLED
 
     # These are internal handlers not designed to be user accessible
 
@@ -189,25 +202,25 @@ class Debugger(_bones.Debugger):
         """The DbgCreateProcessStateChange handler."""
         process = Process(pid, process_handle, base_address)
         self.processes[pid] = process
-        self.on_process_create(process)
-
+        self.on_process_create_begin(process)
+        # Fake the main module load
         self._on_module_load(pid, base_address)
         process.image = process.modules[base_address]
-
+        # Fake the initial thread creation
         self._on_thread_create(pid, tid, thread_handle, start_address)
         initial_thread = process.threads[tid]
         initial_thread.is_initial = True
         process.initial_thread = initial_thread
-
-        self.on_process_created(process)
+        # Let the user know we're done with initial stuff
+        self.on_process_create_end(process)
         return Debugger.DBG_CONTINUE
 
-    def _on_module_load(self, pid, base_address):
-        """The DbgLoadDllStateChange handler."""
+    def _on_process_exit(self, pid, exit_status):
+        """The DbgExitProcessStateChange handler."""
         process = self.processes[pid]
-        module = Module(base_address, process)
-        process.modules[base_address] = module
-        self.on_module_load(module)
+        process.exit_status = exit_status
+        self.on_process_exit(self.processes[pid])
+        del self.processes[pid]
         return Debugger.DBG_CONTINUE
 
     def _on_thread_create(self, pid, tid, handle, start_address):
@@ -227,19 +240,19 @@ class Debugger(_bones.Debugger):
         del process.threads[tid]
         return Debugger.DBG_CONTINUE
 
+    def _on_module_load(self, pid, base_address):
+        """The DbgLoadDllStateChange handler."""
+        process = self.processes[pid]
+        module = Module(base_address, process)
+        process.modules[base_address] = module
+        self.on_module_load(module)
+        return Debugger.DBG_CONTINUE
+
     def _on_module_unload(self, pid, base_address):
         """The DbgUnloadDllStateChange handler."""
         process = self.processes[pid]
         self.on_module_unload(process.modules[base_address])
         del process.modules[base_address]
-        return Debugger.DBG_CONTINUE
-
-    def _on_process_exit(self, pid, exit_status):
-        """The DbgExitProcessStateChange handler."""
-        process = self.processes[pid]
-        process.exit_status = exit_status
-        self.on_process_exit(self.processes[pid])
-        del self.processes[pid]
         return Debugger.DBG_CONTINUE
 
     def _on_exception(self, pid, tid, info, first_chance):

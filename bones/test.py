@@ -1,4 +1,4 @@
-import bones
+import core
 import mcode
 
 class MemReader:
@@ -11,15 +11,15 @@ class MemReader:
         self.offset += 1
         return b
 
-class TestDebugger(bones.Debugger):
+class TestDebugger(core.Debugger):
     def __init__(self):
-        bones.Debugger.__init__(self)
+        core.Debugger.__init__(self)
         self.done = False
         self.idle_count = 0
         self.killing = False
         self.p = None
 
-    def on_process_create(self, p):
+    def on_process_create_begin(self, p):
         print "[%05d] Process created." % (p.id)
         self.p = p
 
