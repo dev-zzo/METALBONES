@@ -12,7 +12,7 @@ typedef struct {
 
 
 static void
-dealloc(PyBones_DebuggerObject* self)
+debugger_dealloc(PyBones_DebuggerObject* self)
 {
     if (self->dbgui_object) {
         NtClose(self->dbgui_object);
@@ -23,7 +23,7 @@ dealloc(PyBones_DebuggerObject* self)
 }
 
 static PyObject *
-new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+debugger_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyBones_DebuggerObject *self;
 
@@ -46,7 +46,7 @@ PyDoc_STRVAR(init__doc__,
 Initialises the Debugger object.");
 
 static int
-init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
+debugger_init(PyBones_DebuggerObject *self, PyObject *args, PyObject *kwds)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES dummy;
@@ -71,7 +71,7 @@ PyDoc_STRVAR(spawn__doc__,
 Spawns and attaches the Debugger object to the process.");
 
 static PyObject *
-spawn(PyBones_DebuggerObject *self, PyObject *args)
+debugger_spawn(PyBones_DebuggerObject *self, PyObject *args)
 {
     PyObject *result = NULL;
     char *cmdline = NULL;
@@ -125,7 +125,7 @@ PyDoc_STRVAR(attach__doc__,
 Attaches the Debugger object to a process.");
 
 static PyObject *
-attach(PyBones_DebuggerObject *self, PyObject *args)
+debugger_attach(PyBones_DebuggerObject *self, PyObject *args)
 {
     HANDLE process;
     NTSTATUS status;
@@ -149,7 +149,7 @@ PyDoc_STRVAR(detach__doc__,
 Detaches the Debugger object from the given process.");
 
 static PyObject *
-detach(PyBones_DebuggerObject *self, PyObject *args)
+debugger_detach(PyBones_DebuggerObject *self, PyObject *args)
 {
     HANDLE process;
     NTSTATUS status;
@@ -309,7 +309,7 @@ Wait for a debugging event for a specified timeout in ms.\n\
 If no event occurs, returns False, else True.");
 
 static PyObject *
-wait_event(PyBones_DebuggerObject *self, PyObject *args)
+debugger_wait_event(PyBones_DebuggerObject *self, PyObject *args)
 {
     DBGUI_WAIT_STATE_CHANGE info;
     unsigned int wait_time = UINT_MAX;
@@ -349,15 +349,15 @@ wait_event(PyBones_DebuggerObject *self, PyObject *args)
 }
 
 static PyMethodDef methods[] = {
-    { "spawn", (PyCFunction)spawn, METH_VARARGS, spawn__doc__ },
-    { "attach", (PyCFunction)attach, METH_VARARGS, attach__doc__ },
-    { "detach", (PyCFunction)detach, METH_VARARGS, detach__doc__ },
-    { "wait_event", (PyCFunction)wait_event, METH_VARARGS, wait_event__doc__ },
+    { "spawn", (PyCFunction)debugger_spawn, METH_VARARGS, spawn__doc__ },
+    { "attach", (PyCFunction)debugger_attach, METH_VARARGS, attach__doc__ },
+    { "detach", (PyCFunction)debugger_detach, METH_VARARGS, detach__doc__ },
+    { "wait_event", (PyCFunction)debugger_wait_event, METH_VARARGS, wait_event__doc__ },
     {NULL}  /* Sentinel */
 };
 
 static PyObject *
-get_processes(PyBones_DebuggerObject *self, void *closure)
+debugger_get_processes(PyBones_DebuggerObject *self, void *closure)
 {
     Py_INCREF(self->processes);
     return self->processes;
@@ -365,7 +365,7 @@ get_processes(PyBones_DebuggerObject *self, void *closure)
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
-    { "processes", (getter)get_processes, NULL, "Processes being debugged", NULL },
+    { "processes", (getter)debugger_get_processes, NULL, "Processes being debugged", NULL },
     {NULL}  /* Sentinel */
 };
 
@@ -381,7 +381,7 @@ PyTypeObject PyBones_Debugger_Type = {
     "_bones.Debugger",  /*tp_name*/
     sizeof(PyBones_DebuggerObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
-    (destructor)dealloc,  /*tp_dealloc*/
+    (destructor)debugger_dealloc,  /*tp_dealloc*/
     0,  /*tp_print*/
     0,  /*tp_getattr*/
     0,  /*tp_setattr*/
@@ -412,9 +412,9 @@ PyTypeObject PyBones_Debugger_Type = {
     0,  /* tp_descr_get */
     0,  /* tp_descr_set */
     0,  /* tp_dictoffset */
-    (initproc)init,  /* tp_init */
+    (initproc)debugger_init,  /* tp_init */
     0,  /* tp_alloc */
-    new,  /* tp_new */
+    debugger_new,  /* tp_new */
 };
 
 int

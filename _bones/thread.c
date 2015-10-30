@@ -31,29 +31,29 @@ typedef struct {
 /* Thread type methods */
 
 static int
-traverse(PyBones_ThreadObject *self, visitproc visit, void *arg)
+thread_traverse(PyBones_ThreadObject *self, visitproc visit, void *arg)
 {
     Py_VISIT(self->process);
     return 0;
 }
 
 static int
-clear(PyBones_ThreadObject *self)
+thread_clear(PyBones_ThreadObject *self)
 {
     Py_CLEAR(self->process);
     return 0;
 }
 
 static void
-dealloc(PyBones_ThreadObject *self)
+thread_dealloc(PyBones_ThreadObject *self)
 {
-    clear(self);
+    thread_clear(self);
     NtClose(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 
 static PyObject *
-new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+thread_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyBones_ThreadObject *self;
 
@@ -68,7 +68,7 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 }
 
 static int
-init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
+thread_init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *process = NULL;
     NTSTATUS status;
@@ -111,13 +111,13 @@ init(PyBones_ThreadObject *self, PyObject *args, PyObject *kwds)
 /* Thread object field accessors */
 
 static PyObject *
-get_id(PyBones_ThreadObject *self, void *closure)
+thread_get_id(PyBones_ThreadObject *self, void *closure)
 {
     return PyInt_FromLong(self->id);
 }
 
 static PyObject *
-get_process(PyBones_ThreadObject *self, void *closure)
+thread_get_process(PyBones_ThreadObject *self, void *closure)
 {
     PyObject *p = self->process;
     Py_INCREF(p);
@@ -125,13 +125,13 @@ get_process(PyBones_ThreadObject *self, void *closure)
 }
 
 static PyObject *
-get_start_address(PyBones_ThreadObject *self, void *closure)
+thread_get_start_address(PyBones_ThreadObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->start_address);
 }
 
 static PyObject *
-get_teb_address(PyBones_ThreadObject *self, void *closure)
+thread_get_teb_address(PyBones_ThreadObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->teb_address);
 }
@@ -144,13 +144,13 @@ _PyBones_Thread_GetTebAddress(PyObject *self)
 }
 
 static PyObject *
-get_exit_status(PyBones_ThreadObject *self, void *closure)
+thread_get_exit_status(PyBones_ThreadObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
 static int
-set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
+thread_set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
@@ -171,7 +171,7 @@ set_exit_status(PyBones_ThreadObject *self, PyObject *value, void *closure)
 }
 
 static PyObject *
-get_context(PyBones_ThreadObject *self, void *closure)
+thread_get_context(PyBones_ThreadObject *self, void *closure)
 {
     PyObject *context;
 
@@ -187,7 +187,7 @@ get_context(PyBones_ThreadObject *self, void *closure)
 }
 
 static int
-set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
+thread_set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
@@ -204,12 +204,12 @@ set_context(PyBones_ThreadObject *self, PyObject *value, void *closure)
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
-    { "id", (getter)get_id, NULL, "Unique thread ID", NULL },
-    { "process", (getter)get_process, NULL, "Owning process", NULL },
-    { "start_address", (getter)get_start_address, NULL, "Thread starting address", NULL },
-    { "teb_address", (getter)get_teb_address, NULL, "Thread Environment Block address", NULL },
-    { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the thread exits", NULL },
-    { "context", (getter)get_context, (setter)set_context, "Thread's CPU context", NULL },
+    { "id", (getter)thread_get_id, NULL, "Unique thread ID", NULL },
+    { "process", (getter)thread_get_process, NULL, "Owning process", NULL },
+    { "start_address", (getter)thread_get_start_address, NULL, "Thread starting address", NULL },
+    { "teb_address", (getter)thread_get_teb_address, NULL, "Thread Environment Block address", NULL },
+    { "exit_status", (getter)thread_get_exit_status, (setter)thread_set_exit_status, "Exit status -- set when the thread exits", NULL },
+    { "context", (getter)thread_get_context, (setter)thread_set_context, "Thread's CPU context", NULL },
     {NULL}  /* Sentinel */
 };
 
@@ -219,7 +219,7 @@ Enable single-stepping this thread.\n\
 Is active ONLY UNTIL THE NEXT SINGLE STEP EVENT.");
 
 static PyObject *
-set_single_step(PyBones_ThreadObject *self)
+thread_set_single_step(PyBones_ThreadObject *self)
 {
     CONTEXT ctx;
     NTSTATUS status;
@@ -241,7 +241,7 @@ set_single_step(PyBones_ThreadObject *self)
 }
 
 static PyMethodDef methods[] = {
-    { "set_single_step", (PyCFunction)set_single_step, METH_NOARGS, set_single_step__doc__ },
+    { "set_single_step", (PyCFunction)thread_set_single_step, METH_NOARGS, set_single_step__doc__ },
     {NULL}  /* Sentinel */
 };
 
@@ -253,7 +253,7 @@ PyTypeObject PyBones_Thread_Type = {
     "_bones.Thread",  /*tp_name*/
     sizeof(PyBones_ThreadObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
-    (destructor)dealloc,  /*tp_dealloc*/
+    (destructor)thread_dealloc,  /*tp_dealloc*/
     0,  /*tp_print*/
     0,  /*tp_getattr*/
     0,  /*tp_setattr*/
@@ -270,8 +270,8 @@ PyTypeObject PyBones_Thread_Type = {
     0,  /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Thread object",  /*tp_doc*/
-    (traverseproc)traverse,  /* tp_traverse */
-    (inquiry)clear,  /* tp_clear */
+    (traverseproc)thread_traverse,  /* tp_traverse */
+    (inquiry)thread_clear,  /* tp_clear */
     0,  /* tp_richcompare */
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
@@ -284,7 +284,7 @@ PyTypeObject PyBones_Thread_Type = {
     0,  /* tp_descr_get */
     0,  /* tp_descr_set */
     0,  /* tp_dictoffset */
-    (initproc)init,  /* tp_init */
+    (initproc)thread_init,  /* tp_init */
     0,  /* tp_alloc */
-    new,  /* tp_new */
+    thread_new,  /* tp_new */
 };

@@ -27,7 +27,7 @@ class TestDebugger(bones.Debugger):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)
         print str(t.context)
         print self.format_insn_at(t.process, t.context.eip)
-        t.set_single_step()
+        # t.set_single_step()
 
     def on_thread_exit(self, t):
         print "[%05d/%05d] Thread exited, status %08x." % (t.process.id, t.id, t.exit_status)
@@ -46,21 +46,23 @@ class TestDebugger(bones.Debugger):
     def on_exception(self, t, info, first_chance):
         print "[%05d/%05d] Exception caught (%s-chance)." % (t.process.id, t.id, "first" if first_chance else "second")
         print str(info)
+        if first_chance:
+            return TestDebugger.DBG_EXCEPTION_NOT_HANDLED
+        t.process.terminate(0)
+        return TestDebugger.DBG_EXCEPTION_NOT_HANDLED
 
-    def on_breakpoint(self, t):
-        return
+    def on_breakpoint(self, t, context, bp):
         print "[%05d/%05d] Breakpoint hit." % (t.process.id, t.id)
-        ctx = t.context
-        print str(ctx)
-        print "Location: %s" % (t.process.get_location_from_va(ctx.eip))
+        print str(context)
+        print "Location: %s" % (t.process.get_location_from_va(context.eip))
     
     def on_single_step(self, t):
-        # print "[%05d/%05d] Single stepping" % (t.process.id, t.id)
+        print "[%05d/%05d] Single stepping" % (t.process.id, t.id)
         #addr = 0
         #ctx = t.context
         addr = t.context.eip
         print self.format_insn_at(t.process, addr)
-        t.set_single_step()
+        # t.set_single_step()
     
     def format_insn_at(self, process, address):
         try:

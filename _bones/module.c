@@ -13,14 +13,14 @@ typedef struct {
 } PyBones_ModuleObject;
 
 static int
-traverse(PyBones_ModuleObject *self, visitproc visit, void *arg)
+module_traverse(PyBones_ModuleObject *self, visitproc visit, void *arg)
 {
     Py_VISIT(self->process);
     return 0;
 }
 
 static int
-clear(PyBones_ModuleObject *self)
+module_clear(PyBones_ModuleObject *self)
 {
     Py_CLEAR(self->process);
     Py_CLEAR(self->name);
@@ -29,14 +29,14 @@ clear(PyBones_ModuleObject *self)
 }
 
 static void
-dealloc(PyBones_ModuleObject *self)
+module_dealloc(PyBones_ModuleObject *self)
 {
-    clear(self);
+    module_clear(self);
     self->ob_type->tp_free((PyObject*)self);
 }
 
 static PyObject *
-new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+module_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyBones_ModuleObject *self;
 
@@ -51,7 +51,7 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 }
 
 static int
-init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
+module_init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *tmp;
     PyObject *process = NULL;
@@ -74,13 +74,13 @@ init(PyBones_ModuleObject *self, PyObject *args, PyObject *kwds)
 }
 
 static PyObject *
-get_base_address(PyBones_ModuleObject *self, void *closure)
+module_get_base_address(PyBones_ModuleObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->base_address);
 }
 
 static PyObject *
-get_process(PyBones_ModuleObject *self, void *closure)
+module_get_process(PyBones_ModuleObject *self, void *closure)
 {
     PyObject *p = self->process;
     Py_INCREF(p);
@@ -88,7 +88,7 @@ get_process(PyBones_ModuleObject *self, void *closure)
 }
 
 static PyObject *
-get_entry_point(PyBones_ModuleObject *self, void *closure)
+module_get_entry_point(PyBones_ModuleObject *self, void *closure)
 {
     unsigned lfa_new;
     IMAGE_NT_HEADERS32 headers;
@@ -106,9 +106,9 @@ get_entry_point(PyBones_ModuleObject *self, void *closure)
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
-    { "base_address", (getter)get_base_address, NULL, "Module base address", NULL },
-    { "process", (getter)get_process, NULL, "Owning process", NULL },
-    { "entry_point", (getter)get_entry_point, NULL, "Module entry point address", NULL },
+    { "base_address", (getter)module_get_base_address, NULL, "Module base address", NULL },
+    { "process", (getter)module_get_process, NULL, "Owning process", NULL },
+    { "entry_point", (getter)module_get_entry_point, NULL, "Module entry point address", NULL },
     {NULL}  /* Sentinel */
 };
 
@@ -118,7 +118,7 @@ PyTypeObject PyBones_Module_Type = {
     "_bones.Module",  /*tp_name*/
     sizeof(PyBones_ModuleObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
-    (destructor)dealloc,  /*tp_dealloc*/
+    (destructor)module_dealloc,  /*tp_dealloc*/
     0,  /*tp_print*/
     0,  /*tp_getattr*/
     0,  /*tp_setattr*/
@@ -135,8 +135,8 @@ PyTypeObject PyBones_Module_Type = {
     0,  /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Module object",  /*tp_doc*/
-    (traverseproc)traverse,  /* tp_traverse */
-    (inquiry)clear,  /* tp_clear */
+    (traverseproc)module_traverse,  /* tp_traverse */
+    (inquiry)module_clear,  /* tp_clear */
     0,  /* tp_richcompare */
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
@@ -149,7 +149,7 @@ PyTypeObject PyBones_Module_Type = {
     0,  /* tp_descr_get */
     0,  /* tp_descr_set */
     0,  /* tp_dictoffset */
-    (initproc)init,  /* tp_init */
+    (initproc)module_init,  /* tp_init */
     0,  /* tp_alloc */
-    new,  /* tp_new */
+    module_new,  /* tp_new */
 };

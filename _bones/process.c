@@ -24,7 +24,7 @@ typedef struct {
 /* Process type methods */
 
 static int
-traverse(PyBones_ProcessObject *self, visitproc visit, void *arg)
+process_traverse(PyBones_ProcessObject *self, visitproc visit, void *arg)
 {
     Py_VISIT(self->threads);
     Py_VISIT(self->modules);
@@ -32,7 +32,7 @@ traverse(PyBones_ProcessObject *self, visitproc visit, void *arg)
 }
 
 static int
-clear(PyBones_ProcessObject *self)
+process_clear(PyBones_ProcessObject *self)
 {
     Py_CLEAR(self->threads);
     Py_CLEAR(self->modules);
@@ -40,15 +40,15 @@ clear(PyBones_ProcessObject *self)
 }
 
 static void
-dealloc(PyBones_ProcessObject *self)
+process_dealloc(PyBones_ProcessObject *self)
 {
-    clear(self);
+    process_clear(self);
     NtClose(self->handle);
     self->ob_type->tp_free((PyObject*)self);
 }
 
 static PyObject *
-new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+process_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     PyBones_ProcessObject *self;
 
@@ -70,7 +70,7 @@ new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 }
 
 static int
-init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
+process_init(PyBones_ProcessObject *self, PyObject *args, PyObject *kwds)
 {
     PyObject *process = NULL;
     NTSTATUS status;
@@ -306,7 +306,7 @@ PyDoc_STRVAR(terminate__doc__,
 Start the termination of this process.");
 
 static PyObject *
-terminate(PyObject *self, PyObject *args)
+process_terminate(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PyObject *result = NULL;
@@ -332,7 +332,7 @@ PyDoc_STRVAR(read_memory__doc__,
 Read the process' memory.");
 
 static PyObject *
-read_memory(PyObject *self, PyObject *args)
+process_read_memory(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PVOID address;
@@ -350,7 +350,7 @@ PyDoc_STRVAR(write_memory__doc__,
 Write the process' memory.");
 
 static PyObject *
-write_memory(PyObject *self, PyObject *args)
+process_write_memory(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PVOID address;
@@ -375,7 +375,7 @@ PyDoc_STRVAR(query_memory__doc__,
 Query the process' VM at the given address.");
 
 static PyObject *
-query_memory(PyObject *self, PyObject *args)
+process_query_memory(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PVOID address;
@@ -392,7 +392,7 @@ PyDoc_STRVAR(protect_memory__doc__,
 Manipulate memory protection flags.");
 
 static PyObject *
-protect_memory(PyObject *self, PyObject *args)
+process_protect_memory(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PVOID address;
@@ -416,7 +416,7 @@ PyDoc_STRVAR(query_section_file_name__doc__,
 Query the file name of a section at the given address.");
 
 static PyObject *
-query_section_file_name(PyObject *self, PyObject *args)
+process_query_section_file_name(PyObject *self, PyObject *args)
 {
     PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
     PVOID address;
@@ -430,43 +430,43 @@ query_section_file_name(PyObject *self, PyObject *args)
 
 
 static PyMethodDef methods[] = {
-    { "terminate", (PyCFunction)terminate, METH_VARARGS, terminate__doc__ },
-    { "read_memory", (PyCFunction)read_memory, METH_VARARGS, read_memory__doc__ },
-    { "write_memory", (PyCFunction)write_memory, METH_VARARGS, write_memory__doc__ },
-    { "query_memory", (PyCFunction)query_memory, METH_VARARGS, query_memory__doc__ },
-    { "protect_memory", (PyCFunction)protect_memory, METH_VARARGS, protect_memory__doc__ },
-    { "query_section_file_name", (PyCFunction)query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
+    { "terminate", (PyCFunction)process_terminate, METH_VARARGS, terminate__doc__ },
+    { "read_memory", (PyCFunction)process_read_memory, METH_VARARGS, read_memory__doc__ },
+    { "write_memory", (PyCFunction)process_write_memory, METH_VARARGS, write_memory__doc__ },
+    { "query_memory", (PyCFunction)process_query_memory, METH_VARARGS, query_memory__doc__ },
+    { "protect_memory", (PyCFunction)process_protect_memory, METH_VARARGS, protect_memory__doc__ },
+    { "query_section_file_name", (PyCFunction)process_query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
     {NULL}  /* Sentinel */
 };
 
 /* Process object field accessors */
 
 static PyObject *
-get_id(PyBones_ProcessObject *self, void *closure)
+process_get_id(PyBones_ProcessObject *self, void *closure)
 {
     return PyInt_FromLong(self->id);
 }
 
 static PyObject *
-get_image_base(PyBones_ProcessObject *self, void *closure)
+process_get_image_base(PyBones_ProcessObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->image_base);
 }
 
 static PyObject *
-get_peb_address(PyBones_ProcessObject *self, void *closure)
+process_get_peb_address(PyBones_ProcessObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong((UINT_PTR)self->peb_address);
 }
 
 static PyObject *
-get_exit_status(PyBones_ProcessObject *self, void *closure)
+process_get_exit_status(PyBones_ProcessObject *self, void *closure)
 {
     return PyLong_FromUnsignedLong(self->exit_status);
 }
 
 static int
-set_exit_status(PyBones_ProcessObject *self, PyObject *value, void *closure)
+process_set_exit_status(PyBones_ProcessObject *self, PyObject *value, void *closure)
 {
     if (!value) {
         PyErr_SetString(PyExc_TypeError, "The attribute cannot be deleted.");
@@ -487,14 +487,14 @@ set_exit_status(PyBones_ProcessObject *self, PyObject *value, void *closure)
 }
 
 static PyObject *
-get_threads(PyBones_ProcessObject *self, void *closure)
+process_get_threads(PyBones_ProcessObject *self, void *closure)
 {
     Py_INCREF(self->threads);
     return self->threads;
 }
 
 static PyObject *
-get_modules(PyBones_ProcessObject *self, void *closure)
+process_get_modules(PyBones_ProcessObject *self, void *closure)
 {
     Py_INCREF(self->modules);
     return self->modules;
@@ -502,12 +502,12 @@ get_modules(PyBones_ProcessObject *self, void *closure)
 
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
-    { "id", (getter)get_id, NULL, "Unique process ID", NULL },
-    { "image_base", (getter)get_image_base, NULL, "Process image base address", NULL },
-    { "peb_address", (getter)get_peb_address, NULL, "Process Environment Block address", NULL },
-    { "exit_status", (getter)get_exit_status, (setter)set_exit_status, "Exit status -- set when the process exits", NULL },
-    { "threads", (getter)get_threads, NULL, "Threads running within the process", NULL },
-    { "modules", (getter)get_modules, NULL, "Modules mapped within the process", NULL },
+    { "id", (getter)process_get_id, NULL, "Unique process ID", NULL },
+    { "image_base", (getter)process_get_image_base, NULL, "Process image base address", NULL },
+    { "peb_address", (getter)process_get_peb_address, NULL, "Process Environment Block address", NULL },
+    { "exit_status", (getter)process_get_exit_status, (setter)process_set_exit_status, "Exit status -- set when the process exits", NULL },
+    { "threads", (getter)process_get_threads, NULL, "Threads running within the process", NULL },
+    { "modules", (getter)process_get_modules, NULL, "Modules mapped within the process", NULL },
     {NULL}  /* Sentinel */
 };
 
@@ -519,7 +519,7 @@ PyTypeObject PyBones_Process_Type = {
     "_bones.Process",  /*tp_name*/
     sizeof(PyBones_ProcessObject),  /*tp_basicsize*/
     0,  /*tp_itemsize*/
-    (destructor)dealloc,  /*tp_dealloc*/
+    (destructor)process_dealloc,  /*tp_dealloc*/
     0,  /*tp_print*/
     0,  /*tp_getattr*/
     0,  /*tp_setattr*/
@@ -536,8 +536,8 @@ PyTypeObject PyBones_Process_Type = {
     0,  /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_BASETYPE,  /*tp_flags*/
     "Process object",  /*tp_doc*/
-    (traverseproc)traverse,  /* tp_traverse */
-    (inquiry)clear,  /* tp_clear */
+    (traverseproc)process_traverse,  /* tp_traverse */
+    (inquiry)process_clear,  /* tp_clear */
     0,  /* tp_richcompare */
     0,  /* tp_weaklistoffset */
     0,  /* tp_iter */
@@ -550,9 +550,9 @@ PyTypeObject PyBones_Process_Type = {
     0,  /* tp_descr_get */
     0,  /* tp_descr_set */
     0,  /* tp_dictoffset */
-    (initproc)init,  /* tp_init */
+    (initproc)process_init,  /* tp_init */
     0,  /* tp_alloc */
-    new,  /* tp_new */
+    process_new,  /* tp_new */
 };
 
 int
