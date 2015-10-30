@@ -1,8 +1,8 @@
 #include <Python.h>
 #include <Windows.h>
 
-#include "internal.h"
 #include "ntdll.h"
+#include "_bones.h"
 
 typedef struct {
     PyObject_HEAD

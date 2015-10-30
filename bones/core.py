@@ -8,6 +8,18 @@ can be more easily implemented in Python than in C.
 import _bones
 import os.path
 
+PAGE_NOACCESS = 0x00000001
+PAGE_READONLY = 0x00000002
+PAGE_READWRITE = 0x00000004
+PAGE_WRITECOPY = 0x00000008
+PAGE_EXECUTE = 0x00000010
+PAGE_EXECUTE_READ = 0x00000020
+PAGE_EXECUTE_READWRITE = 0x00000040
+PAGE_EXECUTE_WRITECOPY = 0x00000080
+PAGE_GUARD = 0x00000100
+PAGE_NOCACHE = 0x00000200
+PAGE_WRITECOMBINE = 0x00000400
+
 class BonesError(_bones.BonesException):
     pass
 
@@ -81,12 +93,17 @@ class HwBreakpoint:
         self.address = address
         self.event = event
 
-class Process(_bones.Process):
+class Process(object):
     """An abstraction representing a debugged process."""
-    def __init__(self, pid, process_handle, base_address):
-        _bones.Process.__init__(self, pid, process_handle, base_address)
+    def __init__(self, pid, handle, base_address):
+        self.id = pid
+        self.handle = handle
+        self.base_address = base_address
         self.image = None
         self.initial_thread = None
+        self.exit_status = None
+        self.threads = {}
+        self.modules = {}
         self.breakpoints = {}
 
     def get_module_from_va(self, address):
@@ -108,6 +125,8 @@ class Process(_bones.Process):
             self.breakpoints[address] = bp
             return bp
     
+    def terminate(self, exit_code=0xDEADBEEFL):
+        _bones.process_terminate(self.handle, exit_code)
     def read_memory(self, address, size):
         return _bones.vmem_read(self.handle, address, size)
     def write_memory(self, address, buffer):
@@ -116,17 +135,44 @@ class Process(_bones.Process):
         return _bones.vmem_query(self.handle, address)
     def protect_memory(self, address, size, protect):
         return _bones.vmem_protect(self.handle, address, size, protect)
+    def query_section_name(self, address):
+        return _bones.vmem_query_section_name(self.handle, address)
 #
 
-class Thread(_bones.Thread):
+class Thread(object):
     """An abstraction representing a thread within a debugged process."""
     def __init__(self, tid, handle, process, start_address):
-        _bones.Thread.__init__(self, tid, handle, process, start_address)
+        self.id = tid
+        self.handle = handle
+        self.process = process
+        self.start_address = start_address
         self.is_initial = False
+        self.exit_status = None
+    
+    def __get_context(self):
+        return _bones.thread_get_context(self.handle)
+    def __set_context(self, value):
+        return _bones.thread_set_context(self.handle, value)
+    context = property(__get_context, __set_context, None, "Thread context")
+    
+    def __get_teb(self):
+        return _bones.thread_get_teb(self.handle)
+    teb_address = property(__get_teb, None, None, "Thread's TEB address")
+    
+    def set_single_step(self):
+        _bones.thread_set_single_step(self.handle)
 #
 
-class Module(_bones.Module):
+class Module(object):
     """An abstraction representing a module within a debugged process."""
+
+    def __init__(self, base_address, process):
+        self.base_address = base_address
+        self.process = process
+
+    def get_entry_point(self):
+        # TODO
+        return None
 
     def get_mapped_size(self):
         try:
@@ -140,7 +186,7 @@ class Module(_bones.Module):
                     size += pages[1]
                     address += pages[1]
                     # Hit another module?
-                    if self.process.query_section_file_name(address) != self.path:
+                    if self.process.query_section_name(address) != self.path:
                         break
                 except _bones.NtStatusError:
                     # Hit unallocated space?
@@ -155,7 +201,7 @@ class Module(_bones.Module):
         try:
             return self._path
         except:
-            self._path = self.process.query_section_file_name(self.base_address)
+            self._path = self.process.query_section_name(self.base_address)
             return self._path
 
     name = property(get_name, None, None, "Module file name")

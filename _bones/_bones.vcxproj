@@ -68,16 +68,11 @@
     <ClCompile Include="context.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="dllmain.c" />
-    <ClCompile Include="module.c" />
-    <ClCompile Include="process.c" />
     <ClCompile Include="toolbox.c" />
-    <ClCompile Include="thread.c" />
-    <ClCompile Include="vmem.c" />
     <ClCompile Include="_bones.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ntcore\ntdll.h" />
-    <ClInclude Include="internal.h" />
     <ClInclude Include="_bones.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

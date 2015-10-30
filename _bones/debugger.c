@@ -1,8 +1,14 @@
 #include <Python.h>
 #include <Windows.h>
 
-#include "internal.h"
 #include "ntdll.h"
+#include "_bones.h"
+
+#if 1
+#define DEBUG_PRINT PySys_WriteStderr
+#else
+#define DEBUG_PRINT
+#endif
 
 typedef struct {
     PyObject_HEAD
