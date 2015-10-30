@@ -25,8 +25,4 @@ PyBones_Process_GetSectionFileNamePtr(PyObject *self, void *address);
 void *
 _PyBones_Thread_GetTebAddress(PyObject *self);
 
-
-PyObject *
-_PyBones_ExceptionInfo_Translate(void *record);
-
 #endif // __INTERNAL_INCLUDED

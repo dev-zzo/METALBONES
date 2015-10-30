@@ -108,5 +108,4 @@ init_bones(void)
     PyBones_Context_Type.tp_new = PyType_GenericNew;
     ready_add_type(m, "Context", &PyBones_Context_Type);
     ready_add_type(m, "Module", &PyBones_Module_Type);
-    ready_add_type(m, "ExceptionInfo", &PyBones_ExceptionInfo_Type);
 }

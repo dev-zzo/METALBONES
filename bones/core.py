@@ -259,6 +259,7 @@ class Debugger(_bones.Debugger):
         """The DbgExceptionStateChange handler."""
         process = self.processes[pid]
         thread = process.threads[tid]
+        # NOTE: currently, `info` is: (code, address, flags, args, nested)
         result = self.on_exception(thread, info, first_chance)
         return result
 

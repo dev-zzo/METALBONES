@@ -68,7 +68,6 @@
     <ClCompile Include="context.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="dllmain.c" />
-    <ClCompile Include="exinfo.c" />
     <ClCompile Include="module.c" />
     <ClCompile Include="process.c" />
     <ClCompile Include="toolbox.c" />

@@ -21,6 +21,4 @@ extern PyTypeObject PyBones_EFlags_Type;
 extern PyTypeObject PyBones_Context_Type;
 extern PyTypeObject PyBones_Module_Type;
 
-extern PyTypeObject PyBones_ExceptionInfo_Type;
-
 #endif // __BONES_INCLUDED

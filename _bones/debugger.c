@@ -168,6 +168,62 @@ debugger_detach(PyBones_DebuggerObject *self, PyObject *args)
     return Py_None;
 }
 
+
+static PyObject *
+debugger_translate_exception(PEXCEPTION_RECORD record)
+{
+    PyObject *info;
+    PyObject *args;
+    PyObject *nested_info;
+    Py_ssize_t num_args;
+    Py_ssize_t pos;
+
+    if (record->ExceptionRecord) {
+        nested_info = debugger_translate_exception(record->ExceptionRecord);
+        if (!nested_info) {
+            return NULL;
+        }
+    }
+    else {
+        Py_INCREF(Py_None);
+        nested_info = Py_None;
+    }
+
+    num_args = record->NumberParameters; /* or EXCEPTION_MAXIMUM_PARAMETERS? */
+    args = PyTuple_New(num_args);
+    if (!args) {
+        goto error1;
+    }
+    for (pos = 0; pos < num_args; ++pos) {
+        PyObject *arg;
+
+        arg = PyLong_FromUnsignedLong(record->ExceptionInformation[pos]);
+        if (!arg) {
+            goto error2;
+        }
+        PyTuple_SET_ITEM(args, pos, arg);
+    }
+
+    info = PyTuple_New(5);
+    if (!info) {
+        goto error2;
+    }
+
+    PyTuple_SET_ITEM(info, 0, PyLong_FromUnsignedLong(record->ExceptionCode));
+    PyTuple_SET_ITEM(info, 1, PyLong_FromVoidPtr(record->ExceptionAddress));
+    PyTuple_SET_ITEM(info, 2, PyLong_FromUnsignedLong(record->ExceptionFlags));
+    PyTuple_SET_ITEM(info, 3, args);
+    PyTuple_SET_ITEM(info, 4, nested_info);
+
+    return (PyObject *)info;
+
+error2:
+    Py_DECREF(args);
+error1:
+    Py_DECREF(nested_info);
+    return NULL;
+}
+
 static int
 handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
 {
@@ -239,7 +295,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         cb_result = PyObject_CallMethod((PyObject *)self, "_on_exception", "iiNN",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread,
-            _PyBones_ExceptionInfo_Translate(&info->StateInfo.Exception.ExceptionRecord),
+            debugger_translate_exception(&info->StateInfo.Exception.ExceptionRecord),
             PyBool_FromLong(info->StateInfo.Exception.FirstChance));
         break;
 
