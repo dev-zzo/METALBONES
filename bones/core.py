@@ -8,18 +8,6 @@ can be more easily implemented in Python than in C.
 import _bones
 import os.path
 
-PAGE_NOACCESS = 0x00000001
-PAGE_READONLY = 0x00000002
-PAGE_READWRITE = 0x00000004
-PAGE_WRITECOPY = 0x00000008
-PAGE_EXECUTE = 0x00000010
-PAGE_EXECUTE_READ = 0x00000020
-PAGE_EXECUTE_READWRITE = 0x00000040
-PAGE_EXECUTE_WRITECOPY = 0x00000080
-PAGE_GUARD = 0x00000100
-PAGE_NOCACHE = 0x00000200
-PAGE_WRITECOMBINE = 0x00000400
-
 class BonesError(_bones.BonesException):
     pass
 
@@ -95,6 +83,19 @@ class HwBreakpoint:
 
 class Process(object):
     """An abstraction representing a debugged process."""
+
+    PAGE_NOACCESS = 0x00000001
+    PAGE_READONLY = 0x00000002
+    PAGE_READWRITE = 0x00000004
+    PAGE_WRITECOPY = 0x00000008
+    PAGE_EXECUTE = 0x00000010
+    PAGE_EXECUTE_READ = 0x00000020
+    PAGE_EXECUTE_READWRITE = 0x00000040
+    PAGE_EXECUTE_WRITECOPY = 0x00000080
+    PAGE_GUARD = 0x00000100
+    PAGE_NOCACHE = 0x00000200
+    PAGE_WRITECOMBINE = 0x00000400
+
     def __init__(self, pid, handle, base_address):
         self.id = pid
         self.handle = handle
@@ -124,7 +125,7 @@ class Process(object):
             bp = Breakpoint(self, address)
             self.breakpoints[address] = bp
             return bp
-    
+
     def terminate(self, exit_code=0xDEADBEEFL):
         _bones.process_terminate(self.handle, exit_code)
     def read_memory(self, address, size):
@@ -148,17 +149,17 @@ class Thread(object):
         self.start_address = start_address
         self.is_initial = False
         self.exit_status = None
-    
+
     def __get_context(self):
         return _bones.thread_get_context(self.handle)
     def __set_context(self, value):
         return _bones.thread_set_context(self.handle, value)
     context = property(__get_context, __set_context, None, "Thread context")
-    
+
     def __get_teb(self):
         return _bones.thread_get_teb(self.handle)
     teb_address = property(__get_teb, None, None, "Thread's TEB address")
-    
+
     def set_single_step(self):
         _bones.thread_set_single_step(self.handle)
 #
@@ -211,7 +212,7 @@ class Module(object):
 
 class Debugger(_bones.Debugger):
     """The debugger object.
-    
+
     The object provides access to debugging capabilities on the system.
     """
 
