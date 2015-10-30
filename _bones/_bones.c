@@ -21,6 +21,8 @@ int
 init_Debugger(PyObject* m);
 int
 init_Process(PyObject* m);
+int
+init_VMem(PyObject* m);
 
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
@@ -103,6 +105,7 @@ init_bones(void)
 
     init_Debugger(m);
     init_Process(m);
+    init_VMem(m);
     ready_add_type(m, "Thread", &PyBones_Thread_Type);
     ready_add_type(m, "EFlags", &PyBones_EFlags_Type);
     PyBones_Context_Type.tp_new = PyType_GenericNew;

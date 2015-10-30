@@ -9,6 +9,7 @@
     <ClCompile Include="toolbox.c" />
     <ClCompile Include="thread.c" />
     <ClCompile Include="_bones.c" />
+    <ClCompile Include="vmem.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="internal.h" />

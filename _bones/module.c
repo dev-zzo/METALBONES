@@ -87,28 +87,10 @@ module_get_process(PyBones_ModuleObject *self, void *closure)
     return p;
 }
 
-static PyObject *
-module_get_entry_point(PyBones_ModuleObject *self, void *closure)
-{
-    unsigned lfa_new;
-    IMAGE_NT_HEADERS32 headers;
-
-    if (PyBones_Process_ReadMemoryPtr(self->process, (char *)self->base_address + 0x3C, sizeof(lfa_new), &lfa_new) < 0) {
-        return NULL;
-    }
-
-    if (PyBones_Process_ReadMemoryPtr(self->process, (char *)self->base_address + lfa_new, sizeof(headers), &headers) < 0) {
-        return NULL;
-    }
-
-    return PyLong_FromUnsignedLong((unsigned long)((char *)self->base_address + headers.OptionalHeader.AddressOfEntryPoint));
-}
-
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "base_address", (getter)module_get_base_address, NULL, "Module base address", NULL },
     { "process", (getter)module_get_process, NULL, "Owning process", NULL },
-    { "entry_point", (getter)module_get_entry_point, NULL, "Module entry point address", NULL },
     {NULL}  /* Sentinel */
 };
 

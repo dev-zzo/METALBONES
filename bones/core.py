@@ -107,6 +107,15 @@ class Process(_bones.Process):
             bp = Breakpoint(self, address)
             self.breakpoints[address] = bp
             return bp
+    
+    def read_memory(self, address, size):
+        return _bones.vmem_read(self.handle, address, size)
+    def write_memory(self, address, buffer):
+        return _bones.vmem_write(self.handle, address, buffer)
+    def query_memory(self, address):
+        return _bones.vmem_query(self.handle, address)
+    def protect_memory(self, address, size, protect):
+        return _bones.vmem_protect(self.handle, address, size, protect)
 #
 
 class Thread(_bones.Thread):

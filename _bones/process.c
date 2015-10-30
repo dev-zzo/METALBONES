@@ -327,90 +327,6 @@ process_terminate(PyObject *self, PyObject *args)
     return Py_None;
 }
 
-PyDoc_STRVAR(read_memory__doc__,
-"read_memory(self, address, size) -> string\n\n\
-Read the process' memory.");
-
-static PyObject *
-process_read_memory(PyObject *self, PyObject *args)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    PVOID address;
-    unsigned size;
-
-    if (!PyArg_ParseTuple(args, "kk", &address, &size)) {
-        return NULL;
-    }
-
-    return PyBones_Process_ReadMemory(self, address, size);
-}
-
-PyDoc_STRVAR(write_memory__doc__,
-"write_memory(self, address, size, data)\n\n\
-Write the process' memory.");
-
-static PyObject *
-process_write_memory(PyObject *self, PyObject *args)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    PVOID address;
-    unsigned size;
-    PyObject *data;
-
-    if (!PyArg_ParseTuple(args, "kkO", &address, &size, &data)) {
-        return NULL;
-    }
-
-    if (!PyString_CheckExact(data)) {
-        PyErr_SetString(PyExc_TypeError, "Expected data to be a string.");
-        return NULL;
-    }
-
-    return PyBones_Process_WriteMemory(self, address, size, data);
-}
-
-PyDoc_STRVAR(query_memory__doc__,
-"query_memory(self, address) -> \n\
-  (base_address, size, alloc_protect, curr_protect, state, type)\n\n\
-Query the process' VM at the given address.");
-
-static PyObject *
-process_query_memory(PyObject *self, PyObject *args)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    PVOID address;
-
-    if (!PyArg_ParseTuple(args, "k", &address)) {
-        return NULL;
-    }
-
-    return PyBones_Process_QueryMemory(self, address);
-}
-
-PyDoc_STRVAR(protect_memory__doc__,
-"protect_memory(self, address, size, protect) -> long\n\n\
-Manipulate memory protection flags.");
-
-static PyObject *
-process_protect_memory(PyObject *self, PyObject *args)
-{
-    PyBones_ProcessObject *_self = (PyBones_ProcessObject *)self;
-    PVOID address;
-    unsigned size;
-    unsigned protect;
-    unsigned oldprotect;
-
-    if (!PyArg_ParseTuple(args, "kkk", &address, &size, &protect)) {
-        return NULL;
-    }
-
-    if (PyBones_Process_ProtectMemory(self, address, size, protect, &oldprotect) < 0) {
-        return NULL;
-    }
-
-    return PyLong_FromUnsignedLong(oldprotect);
-}
-
 PyDoc_STRVAR(query_section_file_name__doc__,
 "query_section_file_name(self, address) -> string\n\n\
 Query the file name of a section at the given address.");
@@ -431,10 +347,6 @@ process_query_section_file_name(PyObject *self, PyObject *args)
 
 static PyMethodDef methods[] = {
     { "terminate", (PyCFunction)process_terminate, METH_VARARGS, terminate__doc__ },
-    { "read_memory", (PyCFunction)process_read_memory, METH_VARARGS, read_memory__doc__ },
-    { "write_memory", (PyCFunction)process_write_memory, METH_VARARGS, write_memory__doc__ },
-    { "query_memory", (PyCFunction)process_query_memory, METH_VARARGS, query_memory__doc__ },
-    { "protect_memory", (PyCFunction)process_protect_memory, METH_VARARGS, protect_memory__doc__ },
     { "query_section_file_name", (PyCFunction)process_query_section_file_name, METH_VARARGS, query_section_file_name__doc__ },
     {NULL}  /* Sentinel */
 };
@@ -445,6 +357,12 @@ static PyObject *
 process_get_id(PyBones_ProcessObject *self, void *closure)
 {
     return PyInt_FromLong(self->id);
+}
+
+static PyObject *
+process_get_handle(PyBones_ProcessObject *self, void *closure)
+{
+    return PyLong_FromVoidPtr(self->handle);
 }
 
 static PyObject *
@@ -503,6 +421,7 @@ process_get_modules(PyBones_ProcessObject *self, void *closure)
 static PyGetSetDef getseters[] = {
     /* name, get, set, doc, closure */
     { "id", (getter)process_get_id, NULL, "Unique process ID", NULL },
+    { "handle", (getter)process_get_handle, NULL, "Process handle", NULL },
     { "image_base", (getter)process_get_image_base, NULL, "Process image base address", NULL },
     { "peb_address", (getter)process_get_peb_address, NULL, "Process Environment Block address", NULL },
     { "exit_status", (getter)process_get_exit_status, (setter)process_set_exit_status, "Exit status -- set when the process exits", NULL },

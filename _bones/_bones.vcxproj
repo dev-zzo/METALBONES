@@ -72,6 +72,7 @@
     <ClCompile Include="process.c" />
     <ClCompile Include="toolbox.c" />
     <ClCompile Include="thread.c" />
+    <ClCompile Include="vmem.c" />
     <ClCompile Include="_bones.c" />
   </ItemGroup>
   <ItemGroup>
