@@ -506,4 +506,6 @@ init_bones(void)
     ready_add_type(m, "EFlags", &PyBones_EFlags_Type);
     PyBones_Context_Type.tp_new = PyType_GenericNew;
     ready_add_type(m, "Context", &PyBones_Context_Type);
+
+    ready_add_type(m, "ProcessMonitor", &PyBones_ProcessMonitor_Type);
 }

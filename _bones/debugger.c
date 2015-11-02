@@ -36,8 +36,9 @@ debugger_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     self = (PyBones_DebuggerObject *)type->tp_alloc(type, 0);
     if (self) {
         self->processes = PyDict_New();
-        if (!self->processes)
+        if (!self->processes) {
             goto fail;
+        }
     }
 
     return (PyObject *)self;
@@ -146,8 +147,7 @@ debugger_attach(PyBones_DebuggerObject *self, PyObject *args)
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 PyDoc_STRVAR(detach__doc__,
@@ -170,8 +170,7 @@ debugger_detach(PyBones_DebuggerObject *self, PyObject *args)
         return NULL;
     }
 
-    Py_INCREF(Py_None);
-    return Py_None;
+    Py_RETURN_NONE;
 }
 
 

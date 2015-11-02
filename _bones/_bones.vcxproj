@@ -68,6 +68,7 @@
     <ClCompile Include="context.c" />
     <ClCompile Include="debugger.c" />
     <ClCompile Include="dllmain.c" />
+    <ClCompile Include="procmon.c" />
     <ClCompile Include="toolbox.c" />
     <ClCompile Include="_bones.c" />
   </ItemGroup>

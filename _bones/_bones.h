@@ -17,5 +17,6 @@ _PyBones_RaiseWin32Error(const char *file, int line, unsigned int code);
 extern PyTypeObject PyBones_Debugger_Type;
 extern PyTypeObject PyBones_EFlags_Type;
 extern PyTypeObject PyBones_Context_Type;
+extern PyTypeObject PyBones_ProcessMonitor_Type;
 
 #endif // __BONES_INCLUDED

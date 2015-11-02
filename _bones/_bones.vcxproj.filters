@@ -6,6 +6,7 @@
     <ClCompile Include="dllmain.c" />
     <ClCompile Include="toolbox.c" />
     <ClCompile Include="_bones.c" />
+    <ClCompile Include="procmon.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="_bones.h" />
