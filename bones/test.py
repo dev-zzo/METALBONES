@@ -1,4 +1,4 @@
-import core
+from dbg import Debugger
 import mcode
 
 class MemReader:
@@ -11,17 +11,21 @@ class MemReader:
         self.offset += 1
         return b
 
-class TestDebugger(core.Debugger):
+class TestDebugger(Debugger):
     def __init__(self):
-        core.Debugger.__init__(self)
+        Debugger.__init__(self)
         self.done = False
         self.idle_count = 0
         self.killing = False
         self.p = None
 
     def on_process_create_begin(self, p):
-        print "[%05d] Process created." % (p.id)
+        print "[%05d] Process is being created." % (p.id)
         self.p = p
+
+    def on_process_create_end(self, p):
+        print "[%05d] Process has been created." % (p.id)
+        p.initial_thread.resume()
 
     def on_thread_create(self, t):
         print "[%05d/%05d] Thread created." % (t.process.id, t.id)

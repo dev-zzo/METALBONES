@@ -162,6 +162,10 @@ class Thread(object):
 
     def set_single_step(self):
         _bones.thread_set_single_step(self.handle)
+    def suspend(self):
+        return _bones.thread_suspend(self.handle)
+    def resume(self):
+        return _bones.thread_resume(self.handle)
 #
 
 class Module(object):
@@ -210,6 +214,21 @@ class Module(object):
     mapped_size = property(get_mapped_size, None, None, "Module's size in virtual memory")
 #
 
+class ExceptionInfo(object):
+    def __init__(self, info):
+        self.code, self.address, self.flags, self.args, self.nested = info
+    def __str__(self):
+        return "Exception %08X at address %08X" % (self.code, self.address)
+class AccessViolationInfo(ExceptionInfo):
+    __kind_map = { 0: 'read', 1: 'write', 8: 'dep' }
+    def __init__(self, info):
+        ExceptionInfo.__init__(self, info)
+        self.kind = AccessViolationInfo.__kind_map[self.args[0]]
+        self.target = self.args[1]
+    def __str__(self):
+        return "Access violation at address %08X when accessing %08X (%s)" % (self.address, self.target, self.kind)
+#
+
 class Debugger(_bones.Debugger):
     """The debugger object.
 
@@ -218,6 +237,7 @@ class Debugger(_bones.Debugger):
 
     def __init__(self):
         _bones.Debugger.__init__(self)
+        self.processes = {}
 
     # These event handlers are designed to be overridden as needed when subclassing
 
@@ -225,7 +245,7 @@ class Debugger(_bones.Debugger):
         "Called when the process is created (before thread/module creation)"
         pass
     def on_process_create_end(self, process):
-        "Called when the process is created (after thread/module creation)"
+        "Called when the process is created (after initial thread creation)"
         pass
     def on_process_exit(self, process):
         "Called when the process has exited"
@@ -315,8 +335,11 @@ class Debugger(_bones.Debugger):
         """The DbgExceptionStateChange handler."""
         process = self.processes[pid]
         thread = process.threads[tid]
-        # NOTE: currently, `info` is: (code, address, flags, args, nested)
-        result = self.on_exception(thread, info, first_chance)
+        if info[0] == 0xC0000005L:
+            xinfo = AccessViolationInfo(info)
+        else:
+            xinfo = ExceptionInfo(info)
+        result = self.on_exception(thread, xinfo, first_chance)
         return result
 
     def _on_breakpoint(self, pid, tid):
