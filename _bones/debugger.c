@@ -13,7 +13,6 @@
 typedef struct {
     PyObject_HEAD
     HANDLE dbgui_object; /* NT debugger object handle */
-    PyObject *processes; /* A dict mapping process id -> process object */
 } PyBones_DebuggerObject;
 
 
@@ -24,7 +23,6 @@ debugger_dealloc(PyBones_DebuggerObject* self)
         NtClose(self->dbgui_object);
         self->dbgui_object = NULL;
     }
-    Py_XDECREF(self->processes);
     self->ob_type->tp_free((PyObject*)self);
 }
 
@@ -34,18 +32,8 @@ debugger_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     PyBones_DebuggerObject *self;
 
     self = (PyBones_DebuggerObject *)type->tp_alloc(type, 0);
-    if (self) {
-        self->processes = PyDict_New();
-        if (!self->processes) {
-            goto fail;
-        }
-    }
 
     return (PyObject *)self;
-
-fail:
-    Py_DECREF(self);
-    return NULL;
 }
 
 PyDoc_STRVAR(init__doc__,
@@ -108,9 +96,7 @@ debugger_spawn(PyBones_DebuggerObject *self, PyObject *args)
     }
 
     status = NtDebugActiveProcess(process_info.hProcess, self->dbgui_object);
-    NtResumeThread(process_info.hThread, NULL);
     if (!NT_SUCCESS(status)) {
-        DEBUG_PRINT("BONES: Attaching to the started process has failed.\n");
         NtTerminateProcess(process_info.hProcess, -1);
         PyBones_RaiseNtStatusError(status);
         goto exit1;
@@ -239,16 +225,6 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     PyObject *cb_result = NULL;
 
     switch (info->NewState) {
-    case DbgIdle:
-        /* No idea how to handle these. */
-        DEBUG_PRINT("BONES: [%d/%d] Caught DbgIdle.\n", pid, tid);
-        break;
-
-    case DbgReplyPending:
-        /* No idea how to handle these. */
-        DEBUG_PRINT("BONES: [%d/%d] Caught DbgReplyPending.\n", pid, tid);
-        break;
-
     case DbgCreateProcessStateChange:
         /* Due to whatever reason, the initial thread's start address
            is not populated (i.e. is zero). Hack around and get it. */
@@ -305,14 +281,12 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         break;
 
     case DbgBreakpointStateChange:
-        // DEBUG_PRINT("BONES: [%d/%d] Caught DbgBreakpointStateChange.\n", pid, tid);
         cb_result = PyObject_CallMethod((PyObject *)self, "_on_breakpoint", "ii",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread);
         break;
 
     case DbgSingleStepStateChange:
-        // DEBUG_PRINT("BONES: [%d/%d] Caught DbgSingleStepStateChange.\n", pid, tid);
         cb_result = PyObject_CallMethod((PyObject *)self, "_on_single_step", "ii",
             info->AppClientId.UniqueProcess,
             info->AppClientId.UniqueThread);
@@ -330,8 +304,11 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
             info->StateInfo.UnloadDll.BaseOfDll);
         break;
 
+    case DbgIdle:
+    case DbgReplyPending:
     default:
-        DEBUG_PRINT("BONES: [%d/%d] Caught unknown event %d.\n", pid, tid, info->NewState);
+        // DEBUG_PRINT("BONES: [%d/%d] Caught unknown event %d.\n", pid, tid, info->NewState);
+        PyErr_SetString(PyExc_ValueError, "unknown debug event type caught");
         break;
     }
 
@@ -346,7 +323,7 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
         }
         else {
             /* Raise a TypeError */
-            PyErr_SetString(PyExc_TypeError, "Expected an instance of int or long.");
+            PyErr_SetString(PyExc_TypeError, "expected an instance of int or long");
         }
         Py_DECREF(cb_result);
 
@@ -417,19 +394,6 @@ static PyMethodDef methods[] = {
     {NULL}  /* Sentinel */
 };
 
-static PyObject *
-debugger_get_processes(PyBones_DebuggerObject *self, void *closure)
-{
-    Py_INCREF(self->processes);
-    return self->processes;
-}
-
-static PyGetSetDef getseters[] = {
-    /* name, get, set, doc, closure */
-    { "processes", (getter)debugger_get_processes, NULL, "Processes being debugged", NULL },
-    {NULL}  /* Sentinel */
-};
-
 PyDoc_STRVAR(type_doc,
 "The debugger object.\n\
 The main object one would make use of to debug stuff.\n\
@@ -467,7 +431,7 @@ PyTypeObject PyBones_Debugger_Type = {
     0,  /* tp_iternext */
     methods,  /* tp_methods */
     0,  /* tp_members */
-    getseters,  /* tp_getset */
+    0,  /* tp_getset */
     0,  /* tp_base */
     0,  /* tp_dict */
     0,  /* tp_descr_get */
