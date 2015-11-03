@@ -239,6 +239,54 @@ thread_set_single_step(PyObject *self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+PyDoc_STRVAR(thread_suspend__doc__,
+"thread_suspend(hthread) -> long\n\n\
+Suspend the thread.");
+
+static PyObject *
+thread_suspend(PyObject *self, PyObject *args)
+{
+    HANDLE handle;
+    NTSTATUS status;
+    ULONG suspend_count;
+
+    if (!PyArg_ParseTuple(args, "k", &handle)) {
+        return NULL;
+    }
+
+    status = NtSuspendThread(handle, &suspend_count);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return NULL;
+    }
+
+    return PyLong_FromUnsignedLong(suspend_count);
+}
+
+PyDoc_STRVAR(thread_resume__doc__,
+"thread_resume(hthread) -> long\n\n\
+Suspend the thread.");
+
+static PyObject *
+thread_resume(PyObject *self, PyObject *args)
+{
+    HANDLE handle;
+    NTSTATUS status;
+    ULONG suspend_count;
+
+    if (!PyArg_ParseTuple(args, "k", &handle)) {
+        return NULL;
+    }
+
+    status = NtResumeThread(handle, &suspend_count);
+    if (!NT_SUCCESS(status)) {
+        PyBones_RaiseNtStatusError(status);
+        return NULL;
+    }
+
+    return PyLong_FromUnsignedLong(suspend_count);
+}
+
 /*** Virtual memory routines ***/
 
 PyDoc_STRVAR(vmem_read__doc__,
@@ -470,6 +518,8 @@ static PyMethodDef methods[] = {
     { "thread_get_context", (PyCFunction)thread_get_context, METH_VARARGS, thread_get_context__doc__ },
     { "thread_set_context", (PyCFunction)thread_set_context, METH_VARARGS, thread_set_context__doc__ },
     { "thread_set_single_step", (PyCFunction)thread_set_single_step, METH_VARARGS, thread_set_single_step__doc__ },
+    { "thread_suspend", (PyCFunction)thread_suspend, METH_VARARGS, thread_suspend__doc__ },
+    { "thread_resume", (PyCFunction)thread_resume, METH_VARARGS, thread_resume__doc__ },
 
     { "vmem_read", (PyCFunction)vmem_read, METH_VARARGS, vmem_read__doc__ },
     { "vmem_write", (PyCFunction)vmem_write, METH_VARARGS, vmem_write__doc__ },
