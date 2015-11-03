@@ -4,12 +4,6 @@
 #include "ntdll.h"
 #include "_bones.h"
 
-#if 1
-#define DEBUG_PRINT PySys_WriteStderr
-#else
-#define DEBUG_PRINT
-#endif
-
 typedef struct {
     PyObject_HEAD
     HANDLE dbgui_object; /* NT debugger object handle */
@@ -307,7 +301,6 @@ handle_state_change(PyBones_DebuggerObject *self, PDBGUI_WAIT_STATE_CHANGE info)
     case DbgIdle:
     case DbgReplyPending:
     default:
-        // DEBUG_PRINT("BONES: [%d/%d] Caught unknown event %d.\n", pid, tid, info->NewState);
         PyErr_SetString(PyExc_ValueError, "unknown debug event type caught");
         break;
     }
