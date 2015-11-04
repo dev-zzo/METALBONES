@@ -57,12 +57,15 @@ procmon_lookup(PSYSTEM_PROCESS_INFORMATION pBuffer, ULONG process_id)
     PSYSTEM_PROCESS_INFORMATION pCursor;
 
     pCursor = pBuffer;
-    do {
+    for (;;) {
         if (pCursor->UniqueProcessId == process_id) {
             return pCursor;
         }
+        if (!pCursor->NextEntryOffset) {
+            return NULL;
+        }
         pCursor = (PSYSTEM_PROCESS_INFORMATION)((PBYTE)pCursor + pCursor->NextEntryOffset);
-    } while (pCursor->NextEntryOffset);
+    }
 
     return NULL;
 }
