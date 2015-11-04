@@ -219,6 +219,10 @@ class ExceptionInfo(object):
         self.code, self.address, self.flags, self.args, self.nested = info
     def __str__(self):
         return "Exception %08X at address %08X" % (self.code, self.address)
+    def __eq__(self, other):
+        if other is not ExceptionInfo:
+            return False
+        return self.code == other.code and self.address == other.address
 class AccessViolationInfo(ExceptionInfo):
     __kind_map = { 0: 'read', 1: 'write', 8: 'dep' }
     def __init__(self, info):
