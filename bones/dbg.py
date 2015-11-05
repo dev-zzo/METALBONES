@@ -178,12 +178,14 @@ class Module(object):
     def __init__(self, base_address, process):
         self.base_address = base_address
         self.process = process
+    def __str__(self):
+        return '%08X: %s' % (self.base_address, self.name)
 
-    def get_entry_point(self):
+    def __get_entry_point(self):
         # TODO
         return None
 
-    def get_mapped_size(self):
+    def __get_mapped_size(self):
         try:
             return self._mapped_size
         except:
@@ -203,19 +205,19 @@ class Module(object):
             self._mapped_size = size
             return self._mapped_size
 
-    def get_name(self):
+    def __get_name(self):
         return os.path.basename(self.path)
 
-    def get_path(self):
+    def __get_path(self):
         try:
             return self._path
         except:
             self._path = self.process.query_section_name(self.base_address)
             return self._path
 
-    name = property(get_name, None, None, "Module file name")
-    path = property(get_path, None, None, "Module file path")
-    mapped_size = property(get_mapped_size, None, None, "Module's size in virtual memory")
+    name = property(__get_name, None, None, "Module file name")
+    path = property(__get_path, None, None, "Module file path")
+    mapped_size = property(__get_mapped_size, None, None, "Module's size in virtual memory")
 #
 
 class ExceptionInfo(object):
