@@ -107,7 +107,7 @@ class Process(object):
         self.modules = {}
         self.breakpoints = {}
     def __str__(self):
-        return 'Process [%05d]' % (self.id)
+        return '[%05d]' % (self.id)
 
     def get_module_from_va(self, address):
         for m in self.modules.values():
@@ -152,7 +152,7 @@ class Thread(object):
         self.is_initial = False
         self.exit_status = None
     def __str__(self):
-        return 'Thread [%05d/%05d]' % (self.process.id, self.id)
+        return '[%05d/%05d]' % (self.process.id, self.id)
 
     def __get_context(self):
         return _bones.thread_get_context(self.handle)
@@ -303,8 +303,8 @@ class Debugger(_bones.Debugger):
         """The DbgExitProcessStateChange handler."""
         process = self.processes[pid]
         process.exit_status = exit_status
-        self.on_process_exit(self.processes[pid])
         del self.processes[pid]
+        self.on_process_exit(process)
         return Debugger.DBG_CONTINUE
 
     def _on_thread_create(self, pid, tid, handle, start_address):
@@ -320,8 +320,8 @@ class Debugger(_bones.Debugger):
         process = self.processes[pid]
         thread = process.threads[tid]
         thread.exit_status = exit_status
-        self.on_thread_exit(thread)
         del process.threads[tid]
+        self.on_thread_exit(thread)
         return Debugger.DBG_CONTINUE
 
     def _on_module_load(self, pid, base_address):
@@ -335,8 +335,9 @@ class Debugger(_bones.Debugger):
     def _on_module_unload(self, pid, base_address):
         """The DbgUnloadDllStateChange handler."""
         process = self.processes[pid]
-        self.on_module_unload(process.modules[base_address])
+        module = process.modules[base_address]
         del process.modules[base_address]
+        self.on_module_unload(module)
         return Debugger.DBG_CONTINUE
 
     def _on_exception(self, pid, tid, info, first_chance):
