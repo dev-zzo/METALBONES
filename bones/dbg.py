@@ -106,6 +106,8 @@ class Process(object):
         self.threads = {}
         self.modules = {}
         self.breakpoints = {}
+    def __str__(self):
+        return 'Process [%05d]' % (self.id)
 
     def get_module_from_va(self, address):
         for m in self.modules.values():
@@ -149,6 +151,8 @@ class Thread(object):
         self.start_address = start_address
         self.is_initial = False
         self.exit_status = None
+    def __str__(self):
+        return 'Thread [%05d/%05d]' % (self.process.id, self.id)
 
     def __get_context(self):
         return _bones.thread_get_context(self.handle)
@@ -230,7 +234,7 @@ class AccessViolationInfo(ExceptionInfo):
         self.kind = AccessViolationInfo.__kind_map[self.args[0]]
         self.target = self.args[1]
     def __str__(self):
-        return "Access violation at address %08X when accessing %08X (%s)" % (self.address, self.target, self.kind)
+        return "Access violation at %08X: %s %08X" % (self.address, self.kind, self.target)
 #
 
 class Debugger(_bones.Debugger):
